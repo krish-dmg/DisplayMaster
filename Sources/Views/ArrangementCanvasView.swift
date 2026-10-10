@@ -1,11 +1,10 @@
 import SwiftUI
 import AppKit
 
-struct StagedDisplayPosition: Identifiable {
-    let id: CGDirectDisplayID
-    let display: DisplayInfo
-    var origin: CGPoint
-    var isDragging: Bool = false
+struct SnapGuideLine: Identifiable {
+    let id = UUID()
+    let start: CGPoint
+    let end: CGPoint
 }
 
 public struct ArrangementCanvasView: View {
@@ -13,6 +12,7 @@ public struct ArrangementCanvasView: View {
     @State private var stagedPositions: [CGDirectDisplayID: CGPoint] = [:]
     @State private var draggingDisplayID: CGDirectDisplayID? = nil
     @State private var dragOffset: CGSize = .zero
+    @State private var activeSnapGuides: [SnapGuideLine] = []
     @State private var isApplying: Bool = false
 
     public init(manager: DisplayManager) {
@@ -27,7 +27,7 @@ public struct ArrangementCanvasView: View {
                     Text("Display Arrangement")
                         .font(.title2)
                         .fontWeight(.bold)
-                    Text("Drag monitors to match your physical desk layout. Changes take effect on apply.")
+                    Text("Drag monitors to match your physical desk layout. Snapping aligns edges smoothly.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
@@ -35,12 +35,17 @@ public struct ArrangementCanvasView: View {
                 Spacer()
 
                 HStack(spacing: 10) {
-                    Button {
-                        autoArrangeHorizontal()
+                    Menu {
+                        Button("Auto Align (Left to Right)") {
+                            autoArrangeHorizontal()
+                        }
+                        Button("MacBook Center Preset") {
+                            autoArrangeMacBookCenter()
+                        }
                     } label: {
-                        Label("Auto Align", systemImage: "rectangle.split.3x1")
+                        Label("Presets", systemImage: "rectangle.3.group")
                     }
-                    .buttonStyle(.bordered)
+                    .menuStyle(.borderedButton)
 
                     Button {
                         resetToCurrentLayout()
@@ -78,10 +83,19 @@ public struct ArrangementCanvasView: View {
                 let canvasOffset = calculateCanvasOffset(geometrySize: geometry.size, scale: scale)
 
                 ZStack {
-                    // Subtle background grid
+                    // Grid
                     CanvasBackgroundGrid()
 
-                    // Render Displays
+                    // Snap Guide Lines
+                    ForEach(activeSnapGuides) { guide in
+                        Path { path in
+                            path.move(to: guide.start)
+                            path.addLine(to: guide.end)
+                        }
+                        .stroke(Color.accentColor.opacity(0.8), style: StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
+                    }
+
+                    // Displays
                     ForEach(manager.displays) { display in
                         let currentOrigin = stagedPositions[display.id] ?? display.bounds.origin
                         let effectiveOrigin = (draggingDisplayID == display.id)
@@ -121,11 +135,11 @@ public struct ArrangementCanvasView: View {
                                         y: currentOrigin.y + deltaY
                                     )
 
-                                    // Snap to edges of adjacent monitors
-                                    let snappedOrigin = snapOrigin(for: display, rawOrigin: rawNewOrigin)
+                                    let (snappedOrigin, _) = snapOrigin(for: display, rawOrigin: rawNewOrigin)
                                     stagedPositions[display.id] = snappedOrigin
                                     draggingDisplayID = nil
                                     dragOffset = .zero
+                                    activeSnapGuides = []
                                 }
                         )
                         .onTapGesture {
@@ -141,7 +155,7 @@ public struct ArrangementCanvasView: View {
 
             Divider()
 
-            // Footer info bar
+            // Footer
             HStack {
                 Label("\(manager.displays.count) Active Displays Connected", systemImage: "display.2")
                     .font(.caption)
@@ -158,7 +172,7 @@ public struct ArrangementCanvasView: View {
                         .font(.caption)
                         .foregroundStyle(.red)
                 } else {
-                    Text("Tip: Click any monitor to select or identify it.")
+                    Text("Drag to arrange. Snaps smoothly to neighboring display edges.")
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                 }
@@ -191,7 +205,6 @@ public struct ArrangementCanvasView: View {
     private func autoArrangeHorizontal() {
         guard !manager.displays.isEmpty else { return }
 
-        // Find main display, anchor it at (0, 0)
         var newPositions: [CGDirectDisplayID: CGPoint] = [:]
         let main = manager.displays.first(where: { $0.isMain }) ?? manager.displays[0]
         newPositions[main.id] = CGPoint(x: 0, y: 0)
@@ -206,38 +219,61 @@ public struct ArrangementCanvasView: View {
         manager.statusMessage = "Displays aligned horizontally side-by-side."
     }
 
-    private func snapOrigin(for display: DisplayInfo, rawOrigin: CGPoint) -> CGPoint {
+    private func autoArrangeMacBookCenter() {
+        guard !manager.displays.isEmpty else { return }
+
+        let builtIn = manager.displays.first(where: { $0.isBuiltIn }) ?? manager.displays[0]
+        var newPositions: [CGDirectDisplayID: CGPoint] = [:]
+        newPositions[builtIn.id] = CGPoint(x: 0, y: 0)
+
+        let others = manager.displays.filter { $0.id != builtIn.id }
+        if others.count == 1 {
+            // Put external to the right
+            newPositions[others[0].id] = CGPoint(x: CGFloat(builtIn.pointWidth), y: 0)
+        } else if others.count >= 2 {
+            // Put first (e.g. iPad) to left, second (Zebronics) to right
+            newPositions[others[0].id] = CGPoint(x: -CGFloat(others[0].pointWidth), y: 0)
+            newPositions[others[1].id] = CGPoint(x: CGFloat(builtIn.pointWidth), y: 0)
+            // Any further displays stack rightwards
+            var curX = CGFloat(builtIn.pointWidth) + CGFloat(others[1].pointWidth)
+            for d in others.dropFirst(2) {
+                newPositions[d.id] = CGPoint(x: curX, y: 0)
+                curX += CGFloat(d.pointWidth)
+            }
+        }
+
+        stagedPositions = newPositions
+        manager.statusMessage = "Preset applied: MacBook Center with side wings."
+    }
+
+    private func snapOrigin(for display: DisplayInfo, rawOrigin: CGPoint) -> (CGPoint, [SnapGuideLine]) {
         var snapped = rawOrigin
-        let snapTolerance: CGFloat = 40.0
+        let snapTolerance: CGFloat = 35.0
+        let guides: [SnapGuideLine] = []
 
         for other in manager.displays where other.id != display.id {
             let otherOrigin = stagedPositions[other.id] ?? other.bounds.origin
             let otherRight = otherOrigin.x + CGFloat(other.pointWidth)
             let otherBottom = otherOrigin.y + CGFloat(other.pointHeight)
 
-            // Snap left edge to other right edge
             if abs(snapped.x - otherRight) < snapTolerance {
                 snapped.x = otherRight
             }
-            // Snap right edge to other left edge
             if abs((snapped.x + CGFloat(display.pointWidth)) - otherOrigin.x) < snapTolerance {
                 snapped.x = otherOrigin.x - CGFloat(display.pointWidth)
             }
-            // Snap top edge to other top edge
             if abs(snapped.y - otherOrigin.y) < snapTolerance {
                 snapped.y = otherOrigin.y
             }
-            // Snap top edge to other bottom edge
             if abs(snapped.y - otherBottom) < snapTolerance {
                 snapped.y = otherBottom
             }
-            // Snap bottom edge to other top edge
             if abs((snapped.y + CGFloat(display.pointHeight)) - otherOrigin.y) < snapTolerance {
                 snapped.y = otherOrigin.y - CGFloat(display.pointHeight)
             }
         }
 
-        return snapped
+        return (snapped, guides)
     }
 
     private func applyLayout() {
@@ -324,7 +360,6 @@ struct DisplayCanvasCard: View {
                 .shadow(color: Color.black.opacity(isDragging ? 0.35 : 0.15), radius: isDragging ? 12 : 5, x: 0, y: isDragging ? 6 : 2)
 
             VStack(spacing: 4) {
-                // Top badges
                 HStack(spacing: 4) {
                     if display.isMain {
                         Text("MAIN")
@@ -361,7 +396,7 @@ struct DisplayCanvasCard: View {
         }
         .frame(width: max(cardWidth, 120), height: max(cardHeight, 80))
         .scaleEffect(isDragging ? 1.03 : 1.0)
-        .animation(.spring(response: 0.25, dampingFraction: 0.8), value: isDragging)
+        .animation(.interactiveSpring(response: 0.18, dampingFraction: 0.85), value: isDragging)
     }
 }
 

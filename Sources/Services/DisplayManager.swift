@@ -19,14 +19,15 @@ public final class DisplayManager: ObservableObject {
     private let userDefaultsAliasesKey = "DisplayMaster_DisplayAliases"
 
     public init() {
-        loadAvailableColorProfiles()
         refreshDisplays()
+        loadAvailableColorProfilesAsync()
         setupNotifications()
     }
 
     private func setupNotifications() {
+        // Debounce notifications by 250ms so rapid plug-in bursts do not stutter or freeze the UI
         NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)
-            .receive(on: RunLoop.main)
+            .debounce(for: .milliseconds(250), scheduler: RunLoop.main)
             .sink { [weak self] _ in
                 self?.refreshDisplays()
             }
@@ -46,61 +47,68 @@ public final class DisplayManager: ObservableObject {
         statusMessage = "Updated display name to '\(newAlias)'"
     }
 
-    public func loadAvailableColorProfiles() {
-        var profiles: [ColorProfileInfo] = []
-        let searchDirectories = [
-            URL(fileURLWithPath: "/System/Library/ColorSync/Profiles"),
-            URL(fileURLWithPath: "/Library/ColorSync/Profiles"),
-            URL(fileURLWithPath: "/Library/ColorSync/Profiles/Displays"),
-            URL(fileURLWithPath: "/System/Library/CoreServices/Resources/Profiles")
-        ]
+    public func loadAvailableColorProfilesAsync() {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            var profiles: [ColorProfileInfo] = []
+            let searchDirectories = [
+                URL(fileURLWithPath: "/System/Library/ColorSync/Profiles"),
+                URL(fileURLWithPath: "/Library/ColorSync/Profiles"),
+                URL(fileURLWithPath: "/Library/ColorSync/Profiles/Displays"),
+                URL(fileURLWithPath: "/System/Library/CoreServices/Resources/Profiles")
+            ]
 
-        var seenPaths = Set<String>()
+            var seenPaths = Set<String>()
 
-        for directory in searchDirectories {
-            guard let fileURLs = try? FileManager.default.contentsOfDirectory(
-                at: directory,
-                includingPropertiesForKeys: nil,
-                options: [.skipsHiddenFiles]
-            ) else { continue }
+            for directory in searchDirectories {
+                guard let fileURLs = try? FileManager.default.contentsOfDirectory(
+                    at: directory,
+                    includingPropertiesForKeys: nil,
+                    options: [.skipsHiddenFiles]
+                ) else { continue }
 
-            for url in fileURLs {
-                let ext = url.pathExtension.lowercased()
-                guard ext == "icc" || ext == "icm" else { continue }
-                guard !seenPaths.contains(url.path) else { continue }
-                seenPaths.insert(url.path)
+                for url in fileURLs {
+                    let ext = url.pathExtension.lowercased()
+                    guard ext == "icc" || ext == "icm" else { continue }
+                    guard !seenPaths.contains(url.path) else { continue }
+                    seenPaths.insert(url.path)
 
-                var displayName = url.deletingPathExtension().lastPathComponent
-                if let unmanaged = ColorSyncProfileCreateWithURL(url as CFURL, nil) {
-                    let profile = unmanaged.takeRetainedValue()
-                    if let unmanagedDesc = ColorSyncProfileCopyDescriptionString(profile) {
-                        let desc = unmanagedDesc.takeRetainedValue() as String
-                        if !desc.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            displayName = desc
+                    var displayName = url.deletingPathExtension().lastPathComponent
+                    if let unmanaged = ColorSyncProfileCreateWithURL(url as CFURL, nil) {
+                        let profile = unmanaged.takeRetainedValue()
+                        if let unmanagedDesc = ColorSyncProfileCopyDescriptionString(profile) {
+                            let desc = unmanagedDesc.takeRetainedValue() as String
+                            if !desc.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                displayName = desc
+                            }
                         }
                     }
-                }
 
-                profiles.append(
-                    ColorProfileInfo(
-                        id: url.path,
-                        name: displayName,
-                        url: url,
-                        isFactory: url.path.contains("/Displays/"),
-                        isCurrent: false
+                    profiles.append(
+                        ColorProfileInfo(
+                            id: url.path,
+                            name: displayName,
+                            url: url,
+                            isFactory: url.path.contains("/Displays/"),
+                            isCurrent: false
+                        )
                     )
-                )
+                }
             }
-        }
 
-        self.availableColorProfiles = profiles.sorted { a, b in
-            let priorityNames = ["Display P3", "Adobe RGB (1998)", "sRGB", "Rec. ITU-R BT.709", "Rec. ITU-R BT.2020", "Color LCD"]
-            let aPriority = priorityNames.firstIndex(where: { a.name.contains($0) }) ?? 999
-            let bPriority = priorityNames.firstIndex(where: { b.name.contains($0) }) ?? 999
-            if aPriority != bPriority {
-                return aPriority < bPriority
+            let sorted = profiles.sorted { a, b in
+                let priorityNames = ["Display P3", "Adobe RGB (1998)", "sRGB", "Rec. ITU-R BT.709", "Rec. ITU-R BT.2020", "Color LCD"]
+                let aPriority = priorityNames.firstIndex(where: { a.name.contains($0) }) ?? 999
+                let bPriority = priorityNames.firstIndex(where: { b.name.contains($0) }) ?? 999
+                if aPriority != bPriority {
+                    return aPriority < bPriority
+                }
+                return a.name.localizedStandardCompare(b.name) == .orderedAscending
             }
-            return a.name.localizedStandardCompare(b.name) == .orderedAscending
+
+            DispatchQueue.main.async {
+                self?.availableColorProfiles = sorted
+                self?.refreshDisplays()
+            }
         }
     }
 
@@ -164,7 +172,6 @@ public final class DisplayManager: ObservableObject {
                 systemName = "iPad Pro (Sidecar)"
                 connectionBus = "USB-C / AWDL Wireless"
             } else {
-                // External display - check if HDMI or 100Hz (Zebronics)
                 if rawScreenName.localizedCaseInsensitiveContains("HDMI") || refreshRate >= 99.0 {
                     recognizedType = .zebronicsExternal
                     systemName = "Zebronics Monitor (HDMI)"
@@ -380,7 +387,7 @@ public final class DisplayManager: ObservableObject {
         let defaultProfileKey = kColorSyncDeviceDefaultProfileID.takeUnretainedValue()
 
         let profileDict: [CFString: Any] = [
-            defaultProfileKey: kCFNull!
+            defaultProfileKey: kCFNull as Any
         ]
 
         let success = ColorSyncDeviceSetCustomProfiles(deviceClass, cfUUID, profileDict as CFDictionary)

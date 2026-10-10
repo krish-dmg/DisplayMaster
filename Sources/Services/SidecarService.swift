@@ -68,7 +68,7 @@ public final class SidecarService: ObservableObject {
 
         var items: [SidecarDeviceItem] = []
 
-        // Query connected devices
+        // Query connected devices safely
         var connectedIDs = Set<String>()
         if let connected = mgr.perform(NSSelectorFromString("connectedDevices"))?.takeUnretainedValue() as? [NSObject] {
             for dev in connected {
@@ -77,7 +77,7 @@ public final class SidecarService: ObservableObject {
             }
         }
 
-        // Query all discoverable devices
+        // Query all discoverable devices safely
         if let devices = mgr.perform(NSSelectorFromString("devices"))?.takeUnretainedValue() as? [NSObject] {
             for dev in devices {
                 let name = dev.value(forKey: "name") as? String ?? "iPad"
@@ -102,37 +102,42 @@ public final class SidecarService: ObservableObject {
 
     public func connect(device: SidecarDeviceItem, completion: @escaping (Bool) -> Void) {
         guard let mgr = sidecarManager else {
-            errorMessage = "Sidecar service is not initialized."
+            errorMessage = "Sidecar service is unavailable. Opening macOS Displays settings..."
+            openSystemAddDisplaySettings()
             completion(false)
             return
         }
 
-        statusMessage = "Connecting to \(device.name)..."
+        statusMessage = "Initiating connection to \(device.name)..."
 
-        // Perform connectToDevice:completion:
-        // Because completion takes a block, we invoke via performSelector or open macOS Displays Settings
         let selector = NSSelectorFromString("connectToDevice:completion:")
-        if mgr.responds(to: selector) {
-            typealias ConnectFunc = @convention(c) (AnyObject, Selector, AnyObject, @convention(block) (NSError?) -> Void) -> Void
-            let methodIMP = mgr.method(for: selector)
-            let fn = unsafeBitCast(methodIMP, to: ConnectFunc.self)
-
-            fn(mgr, selector, device.rawDevice) { [weak self] error in
-                DispatchQueue.main.async {
-                    if let err = error {
-                        self?.errorMessage = "Failed to connect: \(err.localizedDescription)"
-                        completion(false)
-                    } else {
-                        self?.statusMessage = "Connected to \(device.name) successfully!"
-                        self?.scanDevices()
-                        completion(true)
-                    }
-                }
-            }
-        } else {
+        guard mgr.responds(to: selector) else {
             openSystemAddDisplaySettings()
             completion(true)
+            return
         }
+
+        typealias ConnectFunc = @convention(c) (AnyObject, Selector, AnyObject, AnyObject) -> Void
+        let methodIMP = mgr.method(for: selector)
+        let fn = unsafeBitCast(methodIMP, to: ConnectFunc.self)
+
+        // Heap-allocated malloc block cast to AnyObject to prevent non-escaping closure trapping
+        let completionBlock: @convention(block) (NSError?) -> Void = { [weak self] error in
+            DispatchQueue.main.async {
+                if let err = error {
+                    self?.errorMessage = "Sidecar connection note: \(err.localizedDescription)"
+                    self?.openSystemAddDisplaySettings()
+                    completion(false)
+                } else {
+                    self?.statusMessage = "Successfully connected to \(device.name)!"
+                    self?.scanDevices()
+                    completion(true)
+                }
+            }
+        }
+
+        let blockObject = unsafeBitCast(completionBlock, to: AnyObject.self)
+        fn(mgr, selector, device.rawDevice, blockObject)
     }
 
     public func disconnect(device: SidecarDeviceItem, completion: @escaping (Bool) -> Void) {
@@ -142,26 +147,30 @@ public final class SidecarService: ObservableObject {
         }
 
         let selector = NSSelectorFromString("disconnectFromDevice:completion:")
-        if mgr.responds(to: selector) {
-            typealias DisconnectFunc = @convention(c) (AnyObject, Selector, AnyObject, @convention(block) (NSError?) -> Void) -> Void
-            let methodIMP = mgr.method(for: selector)
-            let fn = unsafeBitCast(methodIMP, to: DisconnectFunc.self)
+        guard mgr.responds(to: selector) else {
+            completion(false)
+            return
+        }
 
-            fn(mgr, selector, device.rawDevice) { [weak self] error in
-                DispatchQueue.main.async {
-                    if let err = error {
-                        self?.errorMessage = "Failed to disconnect: \(err.localizedDescription)"
-                        completion(false)
-                    } else {
-                        self?.statusMessage = "Disconnected from \(device.name)."
-                        self?.scanDevices()
-                        completion(true)
-                    }
+        typealias DisconnectFunc = @convention(c) (AnyObject, Selector, AnyObject, AnyObject) -> Void
+        let methodIMP = mgr.method(for: selector)
+        let fn = unsafeBitCast(methodIMP, to: DisconnectFunc.self)
+
+        let completionBlock: @convention(block) (NSError?) -> Void = { [weak self] error in
+            DispatchQueue.main.async {
+                if let err = error {
+                    self?.errorMessage = "Disconnect error: \(err.localizedDescription)"
+                    completion(false)
+                } else {
+                    self?.statusMessage = "Disconnected from \(device.name)."
+                    self?.scanDevices()
+                    completion(true)
                 }
             }
-        } else {
-            completion(false)
         }
+
+        let blockObject = unsafeBitCast(completionBlock, to: AnyObject.self)
+        fn(mgr, selector, device.rawDevice, blockObject)
     }
 
     public func openSystemAddDisplaySettings() {
@@ -171,7 +180,6 @@ public final class SidecarService: ObservableObject {
     }
 
     public func openScreenMirroring() {
-        // Run native AppleScript to trigger Screen Mirroring in Control Center
         let scriptSource = """
         tell application "System Events"
             tell process "ControlCenter"
