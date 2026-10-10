@@ -2,6 +2,31 @@ import Foundation
 import CoreGraphics
 import AppKit
 
+public struct HardwareSpecs: Hashable {
+    public let modelIdentifier: String
+    public let generation: String
+    public let processorOrChipset: String
+    public let panelTechnology: String
+    public let physicalRefreshCapability: String
+    public let connectionBus: String
+
+    public init(
+        modelIdentifier: String,
+        generation: String,
+        processorOrChipset: String,
+        panelTechnology: String,
+        physicalRefreshCapability: String,
+        connectionBus: String
+    ) {
+        self.modelIdentifier = modelIdentifier
+        self.generation = generation
+        self.processorOrChipset = processorOrChipset
+        self.panelTechnology = panelTechnology
+        self.physicalRefreshCapability = physicalRefreshCapability
+        self.connectionBus = connectionBus
+    }
+}
+
 public enum RecognizedDisplayType: String, Codable {
     case builtInRetina = "Built-in Retina Display"
     case zebronicsExternal = "Zebronics External Monitor"
@@ -74,6 +99,7 @@ public struct DisplayInfo: Identifiable, Hashable {
     public let currentColorProfileURL: URL?
     public let isSidecarOrAirPlay: Bool
     public let connectionBus: String
+    public let hardwareSpecs: HardwareSpecs
     public let modes: [DisplayModeInfo]
     public let colorProfiles: [ColorProfileInfo]
 
@@ -90,16 +116,7 @@ public struct DisplayInfo: Identifiable, Hashable {
     }
 
     public var hardwareCategory: String {
-        switch recognizedType {
-        case .builtInRetina:
-            return "Built-in Liquid Retina (Color LCD)"
-        case .zebronicsExternal:
-            return "Zebronics HDMI External Monitor (\(String(format: "%.0f", currentRefreshRate))Hz)"
-        case .sidecarIPad:
-            return "iPad Pro Sidecar Extended Display (\(String(format: "%.0f", currentRefreshRate))Hz)"
-        case .genericExternal:
-            return "External Monitor via \(connectionBus) (\(String(format: "%.0f", currentRefreshRate))Hz)"
-        }
+        return hardwareSpecs.generation
     }
 
     public func hash(into hasher: inout Hasher) {

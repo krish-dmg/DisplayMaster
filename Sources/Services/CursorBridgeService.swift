@@ -30,6 +30,7 @@ public final class CursorBridgeService: ObservableObject {
     private var eventPort: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     private var isWarping: Bool = false
+    private var lastWarpTime: TimeInterval = 0
 
     private init() {
         if let savedEnabled = UserDefaults.standard.object(forKey: "DisplayMaster_CursorBridgeEnabled") as? Bool {
@@ -59,7 +60,6 @@ public final class CursorBridgeService: ObservableObject {
                 let service = Unmanaged<CursorBridgeService>.fromOpaque(refcon).takeUnretainedValue()
 
                 if type.rawValue == 0xFFFFFFFF || type == .tapDisabledByTimeout {
-                    // Re-enable if disabled by OS timeout
                     if let port = service.eventPort {
                         CGEvent.tapEnable(tap: port, enable: true)
                     }
@@ -95,95 +95,173 @@ public final class CursorBridgeService: ObservableObject {
         }
     }
 
+    private func distanceToRect(point: CGPoint, rect: CGRect) -> CGFloat {
+        let dx = max(rect.minX - point.x, 0, point.x - rect.maxX)
+        let dy = max(rect.minY - point.y, 0, point.y - rect.maxY)
+        return sqrt(dx * dx + dy * dy)
+    }
+
+    private func findSourceDisplay(point: CGPoint, deltaX: Double, deltaY: Double, displays: [DisplayInfo]) -> DisplayInfo? {
+        // Priority 1: When moving horizontally near a vertical boundary
+        if deltaX > 0.05 {
+            // Moving right: if cursor is near maxX of a display, that display is the source
+            if let match = displays.first(where: {
+                abs($0.bounds.maxX - point.x) <= 16.0 &&
+                point.y >= ($0.bounds.minY - 30) && point.y <= ($0.bounds.maxY + 30)
+            }) {
+                return match
+            }
+        } else if deltaX < -0.05 {
+            // Moving left: if cursor is near minX of a display, that display is the source
+            if let match = displays.first(where: {
+                abs(point.x - $0.bounds.minX) <= 16.0 &&
+                point.y >= ($0.bounds.minY - 30) && point.y <= ($0.bounds.maxY + 30)
+            }) {
+                return match
+            }
+        }
+
+        // Priority 2: When moving vertically near a horizontal boundary
+        if deltaY > 0.05 {
+            // Moving down: if cursor is near maxY of a display
+            if let match = displays.first(where: {
+                abs($0.bounds.maxY - point.y) <= 16.0 &&
+                point.x >= ($0.bounds.minX - 30) && point.x <= ($0.bounds.maxX + 30)
+            }) {
+                return match
+            }
+        } else if deltaY < -0.05 {
+            // Moving up: if cursor is near minY of a display
+            if let match = displays.first(where: {
+                abs(point.y - $0.bounds.minY) <= 16.0 &&
+                point.x >= ($0.bounds.minX - 30) && point.x <= ($0.bounds.maxX + 30)
+            }) {
+                return match
+            }
+        }
+
+        // Priority 3: Exact or slightly inset bounding box
+        if let match = displays.first(where: { $0.bounds.insetBy(dx: -3, dy: -3).contains(point) }) {
+            return match
+        }
+
+        // Priority 4: Closest display to point
+        return displays.min(by: { d1, d2 in
+            distanceToRect(point: point, rect: d1.bounds) < distanceToRect(point: point, rect: d2.bounds)
+        })
+    }
+
     private func processMouseMove(event: CGEvent) {
         let displays = DisplayManager.shared.displays
         guard displays.count >= 2 else { return }
+
+        let now = Date().timeIntervalSince1970
+        guard (now - lastWarpTime) > 0.04 else { return }
 
         let point = event.location
         let deltaX = event.getDoubleValueField(.mouseEventDeltaX)
         let deltaY = event.getDoubleValueField(.mouseEventDeltaY)
 
-        // Find which display currently contains this point
-        guard let sourceDisplay = displays.first(where: { $0.bounds.contains(point) }) else {
+        guard let sourceDisplay = findSourceDisplay(point: point, deltaX: deltaX, deltaY: deltaY, displays: displays) else {
             return
         }
 
-        let edgeThreshold: CGFloat = 4.0
+        let edgeThreshold: CGFloat = 12.0
         let sBounds = sourceDisplay.bounds
 
-        // Check Left Edge crossing
-        if deltaX < -0.1 && (point.x - sBounds.minX) <= edgeThreshold {
-            // Find display immediately to the left
+        // 1. Check Left Edge crossing: cursor is at left boundary moving left
+        if deltaX < -0.05 && (point.x - sBounds.minX) <= edgeThreshold {
             let candidates = displays.filter {
                 $0.id != sourceDisplay.id &&
-                abs($0.bounds.maxX - sBounds.minX) <= 20.0
+                abs($0.bounds.maxX - sBounds.minX) <= 50.0
             }
             if let target = candidates.first {
-                // If point.y is outside the target vertical bounds (dead wall zone!)
-                if point.y < target.bounds.minY || point.y > target.bounds.maxY {
+                let isDeadZone = (point.y < target.bounds.minY || point.y > target.bounds.maxY)
+                let isStickyTopCorner = (point.y - sBounds.minY) <= 50.0 // Apple menu bar friction zone
+                let isStickyBottomCorner = (sBounds.maxY - point.y) <= 50.0
+                let isIntentionalCrossing = deltaX < -0.15
+
+                if isDeadZone || isStickyTopCorner || isStickyBottomCorner || isIntentionalCrossing {
                     warpCursorAcrossHorizontal(
                         currentPoint: point,
                         source: sourceDisplay,
                         target: target,
-                        targetX: target.bounds.maxX - 4
+                        targetX: target.bounds.maxX - 16
                     )
+                    lastWarpTime = now
                     return
                 }
             }
         }
 
-        // Check Right Edge crossing
-        if deltaX > 0.1 && (sBounds.maxX - point.x) <= edgeThreshold {
+        // 2. Check Right Edge crossing: cursor is at right boundary moving right
+        if deltaX > 0.05 && (sBounds.maxX - point.x) <= edgeThreshold {
             let candidates = displays.filter {
                 $0.id != sourceDisplay.id &&
-                abs($0.bounds.minX - sBounds.maxX) <= 20.0
+                abs($0.bounds.minX - sBounds.maxX) <= 50.0
             }
             if let target = candidates.first {
-                if point.y < target.bounds.minY || point.y > target.bounds.maxY {
+                let isDeadZone = (point.y < target.bounds.minY || point.y > target.bounds.maxY)
+                let isStickyTopCorner = (point.y - sBounds.minY) <= 50.0 // Control center corner friction zone
+                let isStickyBottomCorner = (sBounds.maxY - point.y) <= 50.0
+                let isIntentionalCrossing = deltaX > 0.15
+
+                if isDeadZone || isStickyTopCorner || isStickyBottomCorner || isIntentionalCrossing {
                     warpCursorAcrossHorizontal(
                         currentPoint: point,
                         source: sourceDisplay,
                         target: target,
-                        targetX: target.bounds.minX + 4
+                        targetX: target.bounds.minX + 16
                     )
+                    lastWarpTime = now
                     return
                 }
             }
         }
 
-        // Check Top Edge crossing
-        if deltaY < -0.1 && (point.y - sBounds.minY) <= edgeThreshold {
+        // 3. Check Top Edge crossing: cursor is at top boundary moving up
+        if deltaY < -0.05 && (point.y - sBounds.minY) <= edgeThreshold {
             let candidates = displays.filter {
                 $0.id != sourceDisplay.id &&
-                abs($0.bounds.maxY - sBounds.minY) <= 20.0
+                abs($0.bounds.maxY - sBounds.minY) <= 50.0
             }
             if let target = candidates.first {
-                if point.x < target.bounds.minX || point.x > target.bounds.maxX {
+                let isDeadZone = (point.x < target.bounds.minX || point.x > target.bounds.maxX)
+                let isCorner = (point.x - sBounds.minX) <= 50.0 || (sBounds.maxX - point.x) <= 50.0
+                let isIntentionalCrossing = deltaY < -0.15
+
+                if isDeadZone || isCorner || isIntentionalCrossing {
                     warpCursorAcrossVertical(
                         currentPoint: point,
                         source: sourceDisplay,
                         target: target,
-                        targetY: target.bounds.maxY - 4
+                        targetY: target.bounds.maxY - 16
                     )
+                    lastWarpTime = now
                     return
                 }
             }
         }
 
-        // Check Bottom Edge crossing
-        if deltaY > 0.1 && (sBounds.maxY - point.y) <= edgeThreshold {
+        // 4. Check Bottom Edge crossing: cursor is at bottom boundary moving down
+        if deltaY > 0.05 && (sBounds.maxY - point.y) <= edgeThreshold {
             let candidates = displays.filter {
                 $0.id != sourceDisplay.id &&
-                abs($0.bounds.minY - sBounds.maxY) <= 20.0
+                abs($0.bounds.minY - sBounds.maxY) <= 50.0
             }
             if let target = candidates.first {
-                if point.x < target.bounds.minX || point.x > target.bounds.maxX {
+                let isDeadZone = (point.x < target.bounds.minX || point.x > target.bounds.maxX)
+                let isCorner = (point.x - sBounds.minX) <= 50.0 || (sBounds.maxX - point.x) <= 50.0
+                let isIntentionalCrossing = deltaY > 0.15
+
+                if isDeadZone || isCorner || isIntentionalCrossing {
                     warpCursorAcrossVertical(
                         currentPoint: point,
                         source: sourceDisplay,
                         target: target,
-                        targetY: target.bounds.minY + 4
+                        targetY: target.bounds.minY + 16
                     )
+                    lastWarpTime = now
                     return
                 }
             }
@@ -203,8 +281,11 @@ public final class CursorBridgeService: ObservableObject {
             let relativeProgress = (currentPoint.y - source.bounds.minY) / sourceHeight
             targetY = target.bounds.minY + (relativeProgress * target.bounds.height)
         } else {
-            targetY = min(max(currentPoint.y, target.bounds.minY + 4), target.bounds.maxY - 4)
+            targetY = min(max(currentPoint.y, target.bounds.minY + 6), target.bounds.maxY - 6)
         }
+
+        // Keep within safe target vertical bounds
+        targetY = min(max(targetY, target.bounds.minY + 6), target.bounds.maxY - 6)
 
         let newPoint = CGPoint(x: targetX, y: targetY)
         isWarping = true
@@ -226,8 +307,10 @@ public final class CursorBridgeService: ObservableObject {
             let relativeProgress = (currentPoint.x - source.bounds.minX) / sourceWidth
             targetX = target.bounds.minX + (relativeProgress * target.bounds.width)
         } else {
-            targetX = min(max(currentPoint.x, target.bounds.minX + 4), target.bounds.maxX - 4)
+            targetX = min(max(currentPoint.x, target.bounds.minX + 6), target.bounds.maxX - 6)
         }
+
+        targetX = min(max(targetX, target.bounds.minX + 6), target.bounds.maxX - 6)
 
         let newPoint = CGPoint(x: targetX, y: targetY)
         isWarping = true

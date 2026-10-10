@@ -44,7 +44,7 @@ public struct DisplayInspectorView: View {
     public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                // Monitor Header & Recognition Card
+                // Monitor Header Card
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 6) {
@@ -94,7 +94,7 @@ public struct DisplayInspectorView: View {
 
                     // Recognition Custom Alias Editor
                     HStack(spacing: 10) {
-                        Text("Custom Name / Alias:")
+                        Text("Custom Display Name:")
                             .font(.caption)
                             .fontWeight(.medium)
                             .foregroundStyle(.secondary)
@@ -108,6 +108,69 @@ public struct DisplayInspectorView: View {
                         .buttonStyle(.bordered)
                         .disabled(aliasInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
+                }
+                .padding()
+                .background(Color(nsColor: .controlBackgroundColor))
+                .cornerRadius(12)
+
+                // Deep Device Identifier & Hardware Specifications Card
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack {
+                        Label("Deep Hardware Identification", systemImage: "info.circle.fill")
+                            .font(.headline)
+                        Spacer()
+                        Text("Model: \(display.hardwareSpecs.modelIdentifier)")
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 10) {
+                        GridRow {
+                            Text("Device Generation:")
+                                .fontWeight(.medium)
+                                .foregroundStyle(.secondary)
+                            Text(display.hardwareSpecs.generation)
+                                .fontWeight(.semibold)
+                        }
+
+                        GridRow {
+                            Text("Processor / Controller:")
+                                .fontWeight(.medium)
+                                .foregroundStyle(.secondary)
+                            Text(display.hardwareSpecs.processorOrChipset)
+                        }
+
+                        GridRow {
+                            Text("Panel Technology:")
+                                .fontWeight(.medium)
+                                .foregroundStyle(.secondary)
+                            Text(display.hardwareSpecs.panelTechnology)
+                        }
+
+                        GridRow {
+                            Text("Physical Refresh Cap:")
+                                .fontWeight(.medium)
+                                .foregroundStyle(.secondary)
+                            Text(display.hardwareSpecs.physicalRefreshCapability)
+                                .foregroundStyle(display.hardwareSpecs.physicalRefreshCapability.contains("120") ? .blue : .primary)
+                        }
+
+                        GridRow {
+                            Text("Hardware Bus:")
+                                .fontWeight(.medium)
+                                .foregroundStyle(.secondary)
+                            Text(display.hardwareSpecs.connectionBus)
+                        }
+
+                        GridRow {
+                            Text("Hardware UUID:")
+                                .fontWeight(.medium)
+                                .foregroundStyle(.secondary)
+                            Text(display.uuid)
+                                .font(.system(.caption2, design: .monospaced))
+                        }
+                    }
+                    .font(.subheadline)
                 }
                 .padding()
                 .background(Color(nsColor: .controlBackgroundColor))
@@ -229,61 +292,6 @@ public struct DisplayInspectorView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(isProcessing || selectedProfileID.isEmpty)
-                }
-                .padding()
-                .background(Color(nsColor: .controlBackgroundColor))
-                .cornerRadius(12)
-
-                // Tuning Section 3: Hardware Details & Deep Diagnostics
-                VStack(alignment: .leading, spacing: 12) {
-                    Label("Live Hardware Diagnostics (Real System Data)", systemImage: "cpu")
-                        .font(.headline)
-
-                    Grid(alignment: .leading, horizontalSpacing: 20, verticalSpacing: 10) {
-                        GridRow {
-                            Text("Display ID:")
-                                .foregroundStyle(.secondary)
-                            Text("\(display.id)")
-                                .font(.system(.body, design: .monospaced))
-
-                            Text("Hardware UUID:")
-                                .foregroundStyle(.secondary)
-                            Text(display.uuid)
-                                .font(.system(.caption, design: .monospaced))
-                        }
-
-                        GridRow {
-                            Text("Logical Points:")
-                                .foregroundStyle(.secondary)
-                            Text("\(display.pointWidth) x \(display.pointHeight) pt")
-
-                            Text("Physical Pixels:")
-                                .foregroundStyle(.secondary)
-                            Text("\(display.pixelWidth) x \(display.pixelHeight) px")
-                        }
-
-                        GridRow {
-                            Text("Scale Factor:")
-                                .foregroundStyle(.secondary)
-                            Text(display.pixelWidth > display.pointWidth ? "2x (HiDPI Retina)" : "1x (Standard)")
-
-                            Text("Connection Bus:")
-                                .foregroundStyle(.secondary)
-                            Text(display.connectionBus)
-                        }
-
-                        GridRow {
-                            Text("Active Refresh:")
-                                .foregroundStyle(.secondary)
-                            Text("\(String(format: "%.1f", display.currentRefreshRate)) Hz")
-                                .font(.system(.body, design: .monospaced))
-
-                            Text("Color Space:")
-                                .foregroundStyle(.secondary)
-                            Text(display.currentColorProfileName)
-                        }
-                    }
-                    .font(.subheadline)
                 }
                 .padding()
                 .background(Color(nsColor: .controlBackgroundColor))

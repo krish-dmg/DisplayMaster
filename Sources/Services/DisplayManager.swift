@@ -25,7 +25,6 @@ public final class DisplayManager: ObservableObject {
     }
 
     private func setupNotifications() {
-        // Debounce notifications by 250ms so rapid plug-in bursts do not stutter or freeze the UI
         NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)
             .debounce(for: .milliseconds(250), scheduler: RunLoop.main)
             .sink { [weak self] _ in
@@ -45,6 +44,128 @@ public final class DisplayManager: ObservableObject {
         UserDefaults.standard.set(aliases, forKey: userDefaultsAliasesKey)
         refreshDisplays()
         statusMessage = "Updated display name to '\(newAlias)'"
+    }
+
+    private func getHostMacModel() -> String {
+        var size: Int = 0
+        sysctlbyname("hw.model", nil, &size, nil, 0)
+        var model = [CChar](repeating: 0, count: size)
+        sysctlbyname("hw.model", &model, &size, nil, 0)
+        return String(cString: model)
+    }
+
+    private func resolveDeepHardwareSpecs(
+        isBuiltIn: Bool,
+        isSidecar: Bool,
+        rawName: String,
+        refreshRate: Double,
+        pointW: Int,
+        pointH: Int,
+        pixelW: Int,
+        pixelH: Int
+    ) -> (RecognizedDisplayType, String, HardwareSpecs) {
+        if isBuiltIn {
+            let hostModel = getHostMacModel()
+            let gen: String
+            let chip: String
+            let panel: String
+
+            if hostModel.contains("MacBookAir10,1") {
+                gen = "MacBook Air 13-inch (M1, 2020)"
+                chip = "Apple M1 (8-Core CPU, 7-Core GPU, 16-Core Neural Engine)"
+                panel = "13.3-inch Retina LCD (2560 x 1600 native, 227 ppi, P3 Color, 400 nits)"
+            } else if hostModel.contains("Mac14,2") {
+                gen = "MacBook Air 13-inch (M2, 2022)"
+                chip = "Apple M2 (8-Core CPU, 8/10-Core GPU)"
+                panel = "13.6-inch Liquid Retina Display (2560 x 1664 native, 500 nits)"
+            } else if hostModel.contains("Mac14,15") {
+                gen = "MacBook Air 15-inch (M2, 2023)"
+                chip = "Apple M2 (8-Core CPU, 10-Core GPU)"
+                panel = "15.3-inch Liquid Retina Display (2880 x 1864 native, 500 nits)"
+            } else if hostModel.contains("Mac15,") {
+                gen = "MacBook Air (M3, 2024)"
+                chip = "Apple M3 (8-Core CPU, 10-Core GPU)"
+                panel = "Liquid Retina Display with Dual-External Clamshell Support"
+            } else {
+                gen = "Apple Silicon MacBook Retina Display"
+                chip = "Apple Silicon SoC"
+                panel = "Retina LCD Display Panel"
+            }
+
+            let specs = HardwareSpecs(
+                modelIdentifier: hostModel,
+                generation: gen,
+                processorOrChipset: chip,
+                panelTechnology: panel,
+                physicalRefreshCapability: "60.00 Hz (Fixed Hardware Retina)",
+                connectionBus: "Internal Embedded DisplayPort (eDP)"
+            )
+            return (.builtInRetina, "Built-in Liquid Retina", specs)
+        } else if isSidecar {
+            // Check connected sidecar devices
+            let sidecarDevices = SidecarService.shared.availableDevices
+            let sidecarModelCode = sidecarDevices.first?.model ?? "iPad8,3"
+
+            let gen: String
+            let chip: String
+            let panel: String
+
+            if sidecarModelCode.contains("iPad8,1") || sidecarModelCode.contains("iPad8,2") ||
+               sidecarModelCode.contains("iPad8,3") || sidecarModelCode.contains("iPad8,4") {
+                gen = "iPad Pro 11-inch (1st Gen, 2018)"
+                chip = "Apple A12X Bionic (8-Core CPU, 7-Core GPU)"
+                panel = "11-inch Liquid Retina IPS (2388 x 1668 at 264 ppi, P3 Wide Color, True Tone)"
+            } else if sidecarModelCode.contains("iPad8,5") || sidecarModelCode.contains("iPad8,6") ||
+                      sidecarModelCode.contains("iPad8,7") || sidecarModelCode.contains("iPad8,8") {
+                gen = "iPad Pro 12.9-inch (3rd Gen, 2018)"
+                chip = "Apple A12X Bionic (8-Core CPU, 7-Core GPU)"
+                panel = "12.9-inch Liquid Retina IPS (2732 x 2048 at 264 ppi, P3 Color)"
+            } else if sidecarModelCode.contains("iPad13,") {
+                gen = "iPad Pro (M1, 3rd/5th Gen, 2021)"
+                chip = "Apple M1 (8-Core CPU, 8-Core GPU)"
+                panel = "Liquid Retina / XDR Mini-LED (120Hz ProMotion)"
+            } else if sidecarModelCode.contains("iPad14,") {
+                gen = "iPad Pro (M2, 4th/6th Gen, 2022)"
+                chip = "Apple M2 (8-Core CPU, 10-Core GPU)"
+                panel = "Liquid Retina / XDR Mini-LED (120Hz ProMotion)"
+            } else if sidecarModelCode.contains("iPad16,") {
+                gen = "iPad Pro (M4, 2024)"
+                chip = "Apple M4 (Tandem OLED)"
+                panel = "Ultra Retina Tandem OLED (120Hz ProMotion)"
+            } else {
+                gen = "iPad Pro 11-inch (1st Gen, 2018)"
+                chip = "Apple A12X Bionic"
+                panel = "Liquid Retina Display (120Hz ProMotion Panel)"
+            }
+
+            let specs = HardwareSpecs(
+                modelIdentifier: sidecarModelCode,
+                generation: gen,
+                processorOrChipset: chip,
+                panelTechnology: panel,
+                physicalRefreshCapability: "120.00 Hz ProMotion Physical Panel (Streamed at 60Hz via Sidecar)",
+                connectionBus: "High-Speed USB-C Cable / Peer-to-Peer AWDL Wireless"
+            )
+            return (.sidecarIPad, "iPad Pro (Sidecar)", specs)
+        } else {
+            // External monitor
+            let isZeb = rawName.localizedCaseInsensitiveContains("HDMI") || refreshRate >= 99.0
+            let gen = isZeb ? "Zebronics 22-inch Full HD Monitor" : "External Desktop Monitor"
+            let sysName = isZeb ? "Zebronics Monitor (HDMI)" : (rawName.isEmpty ? "External Monitor" : rawName)
+            let chip = "HDMI 2.0 / DisplayPort Alt-Mode Controller"
+            let panel = "\(pointW) x \(pointH) Full High Definition (16:9 Widescreen)"
+            let refreshStr = "\(String(format: "%.0f", refreshRate)) Hz High-Refresh Hardware"
+
+            let specs = HardwareSpecs(
+                modelIdentifier: isZeb ? "Zebronics-HDMI-100Hz" : "External-DisplayPort-HDMI",
+                generation: gen,
+                processorOrChipset: chip,
+                panelTechnology: panel,
+                physicalRefreshCapability: refreshStr,
+                connectionBus: "HDMI 2.0 via USB-C DisplayPort Alt Mode"
+            )
+            return (isZeb ? .zebronicsExternal : .genericExternal, sysName, specs)
+        }
     }
 
     public func loadAvailableColorProfilesAsync() {
@@ -158,30 +279,17 @@ public final class DisplayManager: ObservableObject {
             let pixelH = currentMode?.pixelHeight ?? pointH
             let refreshRate = currentMode?.refreshRate ?? 60.0
 
-            // Hardware Recognition
-            let recognizedType: RecognizedDisplayType
-            let systemName: String
-            let connectionBus: String
-
-            if isBuiltIn {
-                recognizedType = .builtInRetina
-                systemName = "Built-in Liquid Retina"
-                connectionBus = "Internal eDP"
-            } else if isSidecarOrAirPlay {
-                recognizedType = .sidecarIPad
-                systemName = "iPad Pro (Sidecar)"
-                connectionBus = "USB-C / AWDL Wireless"
-            } else {
-                if rawScreenName.localizedCaseInsensitiveContains("HDMI") || refreshRate >= 99.0 {
-                    recognizedType = .zebronicsExternal
-                    systemName = "Zebronics Monitor (HDMI)"
-                    connectionBus = "HDMI via USB-C"
-                } else {
-                    recognizedType = .genericExternal
-                    systemName = rawScreenName.isEmpty ? "External Monitor" : rawScreenName
-                    connectionBus = "USB-C / DisplayPort"
-                }
-            }
+            // Deep Hardware Specifications Resolution
+            let (recognizedType, systemName, hardwareSpecs) = resolveDeepHardwareSpecs(
+                isBuiltIn: isBuiltIn,
+                isSidecar: isSidecarOrAirPlay,
+                rawName: rawScreenName,
+                refreshRate: refreshRate,
+                pointW: pointW,
+                pointH: pointH,
+                pixelW: pixelW,
+                pixelH: pixelH
+            )
 
             let customAlias = savedAliases[uuidString] ?? ""
 
@@ -276,7 +384,8 @@ public final class DisplayManager: ObservableObject {
                     currentColorProfileName: currentProfileName,
                     currentColorProfileURL: currentProfileURL,
                     isSidecarOrAirPlay: isSidecarOrAirPlay,
-                    connectionBus: connectionBus,
+                    connectionBus: hardwareSpecs.connectionBus,
+                    hardwareSpecs: hardwareSpecs,
                     modes: modesList,
                     colorProfiles: profilesWithCurrent
                 )

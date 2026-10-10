@@ -15,10 +15,10 @@ public struct AddDisplaySheet: View {
             // Header
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Add & Connect Displays")
+                    Text("Add & Connect Any Display")
                         .font(.title2)
                         .fontWeight(.bold)
-                    Text("Connect iPad Pro over high-speed USB-C, wireless Sidecar, or external HDMI.")
+                    Text("Universal open-source connection hub for wireless displays, tablets, HDMI/DP monitors, and USB graphics adapters.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
@@ -39,45 +39,45 @@ public struct AddDisplaySheet: View {
 
             Divider()
 
-            // Tab Picker
+            // Universal Category Tabs
             Picker("", selection: $selectedTab) {
-                Text("iPad Pro (USB Cable)").tag(0)
-                Text("Wireless Sidecar / AirPlay").tag(1)
-                Text("Zebronics HDMI Monitor").tag(2)
+                Text("Wireless Displays & Tablets").tag(0)
+                Text("Wired Video (HDMI / DP / USB-C)").tag(1)
+                Text("USB Adapters & Virtual Displays").tag(2)
             }
             .pickerStyle(.segmented)
             .padding()
 
-            // Content per tab
+            // Tab Content
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     if selectedTab == 0 {
-                        // iPad via USB Cable
+                        // Category 1: Wireless Displays, Tablets, AirPlay & Smart TVs
                         VStack(alignment: .leading, spacing: 14) {
                             HStack {
-                                Label("High-Speed USB-C Cable (Recommended)", systemImage: "cable.connector")
+                                Label("Wireless Displays, Tablets & Smart TVs", systemImage: "wifi")
                                     .font(.headline)
                                 Spacer()
-                                Text("Low Latency / 120Hz")
+                                Text("AirPlay 2 & AWDL")
                                     .font(.caption)
                                     .fontWeight(.bold)
                                     .padding(.horizontal, 8)
                                     .padding(.vertical, 3)
-                                    .background(Color.green.opacity(0.15))
-                                    .foregroundStyle(.green)
+                                    .background(Color.blue.opacity(0.15))
+                                    .foregroundStyle(.blue)
                                     .cornerRadius(6)
                             }
 
-                            Text("Connecting your iPad Pro to your MacBook Air via a direct USB-C cable bypasses wireless interference, maintains constant battery charging, and provides maximum refresh rate performance.")
+                            Text("Connect any nearby wireless display target: Apple tablets (Sidecar), AirPlay 2 external monitors, Apple TVs, or compatible Smart TVs (LG, Samsung, Sony, Roku).")
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
 
                             Divider()
 
-                            // Live detected Sidecar devices
+                            // Discovered Devices Section
                             VStack(alignment: .leading, spacing: 10) {
                                 HStack {
-                                    Text("Discovered iPads & Sidecar Targets:")
+                                    Text("Discovered Wireless Display Targets:")
                                         .font(.subheadline)
                                         .fontWeight(.semibold)
                                     Spacer()
@@ -92,13 +92,13 @@ public struct AddDisplaySheet: View {
 
                                 if sidecarService.availableDevices.isEmpty {
                                     VStack(spacing: 8) {
-                                        Image(systemName: "ipad.and.arrow.forward")
+                                        Image(systemName: "display.and.arrow.down")
                                             .font(.system(size: 32))
                                             .foregroundStyle(.tertiary)
-                                        Text("No iPads currently detected via SidecarCore.")
+                                        Text("No wireless display receivers currently detected via auto-discovery.")
                                             .font(.subheadline)
                                             .foregroundStyle(.secondary)
-                                        Text("Follow the 3-step checklist below to connect.")
+                                        Text("Turn ON Bluetooth & Wi-Fi on both devices or open the macOS Displays Pairing sheet below.")
                                             .font(.caption)
                                             .foregroundStyle(.tertiary)
                                     }
@@ -112,7 +112,7 @@ public struct AddDisplaySheet: View {
                                             VStack(alignment: .leading, spacing: 2) {
                                                 Text(device.name)
                                                     .font(.headline)
-                                                Text(device.model)
+                                                Text("Model: \(device.model)")
                                                     .font(.caption)
                                                     .foregroundStyle(.secondary)
                                             }
@@ -144,15 +144,15 @@ public struct AddDisplaySheet: View {
 
                             Divider()
 
-                            // USB Connection Checklist
+                            // Wireless Connection Checklist
                             VStack(alignment: .leading, spacing: 8) {
-                                Text("USB Connection Checklist for iPad Pro:")
+                                Text("Universal Wireless Display Checklist:")
                                     .font(.subheadline)
                                     .fontWeight(.bold)
 
-                                ChecklistRow(number: "1", title: "Plug USB-C Cable", detail: "Connect a USB-C to USB-C cable between your MacBook Air and iPad Pro.")
-                                ChecklistRow(number: "2", title: "Unlock & Trust", detail: "Unlock your iPad Pro screen. If asked 'Trust This Computer?', tap Trust.")
-                                ChecklistRow(number: "3", title: "Apple Account & Handoff", detail: "Ensure both devices are signed into the same Apple Account with Wi-Fi and Bluetooth ON.")
+                                ChecklistRow(number: "1", title: "Wi-Fi & Bluetooth", detail: "Ensure both devices have Wi-Fi and Bluetooth turned ON.")
+                                ChecklistRow(number: "2", title: "Screen Mirroring / AirPlay", detail: "Open Control Center or System Displays to mirror or extend desktop.")
+                                ChecklistRow(number: "3", title: "Screen Distance", detail: "Position devices within 30 feet for stable low-latency transmission.")
                             }
                             .padding()
                             .background(Color(nsColor: .controlBackgroundColor))
@@ -169,69 +169,19 @@ public struct AddDisplaySheet: View {
                                 Button {
                                     sidecarService.openScreenMirroring()
                                 } label: {
-                                    Label("Control Center Mirroring", systemImage: "airplayvideo")
+                                    Label("Control Center Screen Mirroring", systemImage: "airplayvideo")
                                 }
                                 .buttonStyle(.bordered)
                             }
                         }
                     } else if selectedTab == 1 {
-                        // Wireless Sidecar / AirPlay
+                        // Category 2: Wired Video (HDMI, DisplayPort, USB-C)
                         VStack(alignment: .leading, spacing: 14) {
                             HStack {
-                                Label("Wireless Sidecar & AirPlay 2", systemImage: "wifi")
+                                Label("Wired Video (HDMI / DisplayPort / USB-C)", systemImage: "display.2")
                                     .font(.headline)
                                 Spacer()
-                                Text("AWDL Peer-to-Peer")
-                                    .font(.caption)
-                                    .fontWeight(.bold)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 3)
-                                    .background(Color.blue.opacity(0.15))
-                                    .foregroundStyle(.blue)
-                                    .cornerRadius(6)
-                            }
-
-                            Text("Stream macOS desktop wirelessly to your iPad Pro using Apple Wireless Direct Link (AWDL) with hardware H.264/HEVC compression.")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("Wireless Requirements:")
-                                    .font(.subheadline)
-                                    .fontWeight(.bold)
-
-                                ChecklistRow(number: "1", title: "Same Wi-Fi Network", detail: "Connect both MacBook Air and iPad Pro to the same Wi-Fi network.")
-                                ChecklistRow(number: "2", title: "Bluetooth Enabled", detail: "Turn ON Bluetooth on both devices for peer-to-peer discovery.")
-                                ChecklistRow(number: "3", title: "Within 30 Feet", detail: "Keep devices close for minimum latency.")
-                            }
-                            .padding()
-                            .background(Color(nsColor: .controlBackgroundColor))
-                            .cornerRadius(10)
-
-                            HStack(spacing: 12) {
-                                Button {
-                                    sidecarService.openSystemAddDisplaySettings()
-                                } label: {
-                                    Label("Add Wireless Display in Settings", systemImage: "plus.circle.fill")
-                                }
-                                .buttonStyle(.borderedProminent)
-
-                                Button {
-                                    sidecarService.openScreenMirroring()
-                                } label: {
-                                    Label("Open Screen Mirroring", systemImage: "airplayvideo")
-                                }
-                                .buttonStyle(.bordered)
-                            }
-                        }
-                    } else {
-                        // Zebronics HDMI External Monitor
-                        VStack(alignment: .leading, spacing: 14) {
-                            HStack {
-                                Label("Zebronics HDMI External Monitor", systemImage: "display.2")
-                                    .font(.headline)
-                                Spacer()
-                                Text("100Hz Full HD")
+                                Text("Native Hardware Scan-Out")
                                     .font(.caption)
                                     .fontWeight(.bold)
                                     .padding(.horizontal, 8)
@@ -241,36 +191,51 @@ public struct AddDisplaySheet: View {
                                     .cornerRadius(6)
                             }
 
-                            if let zeb = manager.displays.first(where: { $0.recognizedType == .zebronicsExternal || $0.currentRefreshRate >= 99.0 }) {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text("Monitor Detected & Active:")
-                                        .font(.subheadline)
-                                        .fontWeight(.bold)
-                                        .foregroundStyle(.green)
+                            Text("Connect any external computer monitor, television, or projector via HDMI, DisplayPort, or USB-C (Thunderbolt / DP Alternate Mode).")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
 
-                                    Text("Name: \(zeb.displayName)")
-                                    Text("Live Resolution: \(zeb.pointWidth) x \(zeb.pointHeight)")
-                                    Text("Live Refresh Rate: \(String(format: "%.0f", zeb.currentRefreshRate)) Hz")
-                                    Text("Connection Bus: \(zeb.connectionBus)")
-                                    Text("Color Profile: \(zeb.currentColorProfileName)")
-                                }
-                                .padding()
-                                .background(Color(nsColor: .controlBackgroundColor))
-                                .cornerRadius(10)
-                            } else {
-                                Text("External HDMI monitor is not currently detected. Plug in your USB-C to HDMI adapter or check monitor power.")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                            }
-
+                            // Active Monitors Detection Card
                             VStack(alignment: .leading, spacing: 8) {
-                                Text("Hardware Connection Guide:")
+                                Text("Active Wired Displays:")
                                     .font(.subheadline)
                                     .fontWeight(.bold)
 
-                                ChecklistRow(number: "1", title: "Direct USB-C to HDMI", detail: "Use a certified USB-C to HDMI 2.0/2.1 cable or adapter for 100Hz output.")
-                                ChecklistRow(number: "2", title: "Monitor Input", detail: "Ensure the Zebronics monitor is set to HDMI 1 or HDMI 2 input.")
-                                ChecklistRow(number: "3", title: "Clamshell vs Dual Mode", detail: "MacBook Air M1/M2 supports 1 external display + internal Retina screen.")
+                                ForEach(manager.displays.filter { !$0.isBuiltIn && !$0.isSidecarOrAirPlay }) { ext in
+                                    HStack {
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(ext.displayName)
+                                                .font(.headline)
+                                            Text("\(ext.pointWidth)x\(ext.pointHeight) @ \(String(format: "%.0f", ext.currentRefreshRate))Hz | \(ext.connectionBus)")
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        Spacer()
+                                        Text("ACTIVE")
+                                            .font(.caption2)
+                                            .fontWeight(.bold)
+                                            .foregroundStyle(.green)
+                                    }
+                                    .padding(10)
+                                    .background(Color(nsColor: .controlBackgroundColor))
+                                    .cornerRadius(8)
+                                }
+
+                                if manager.displays.filter({ !$0.isBuiltIn && !$0.isSidecarOrAirPlay }).isEmpty {
+                                    Text("No wired external monitors currently detected. Plug in your HDMI/DisplayPort cable or USB-C hub.")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Wired Monitor Connection Tips:")
+                                    .font(.subheadline)
+                                    .fontWeight(.bold)
+
+                                ChecklistRow(number: "1", title: "Direct Cable / Hub", detail: "Use a USB-C to HDMI 2.0/2.1 or DisplayPort 1.4 cable for high refresh rates (up to 100Hz/144Hz).")
+                                ChecklistRow(number: "2", title: "Monitor Input Selector", detail: "Ensure the physical monitor is switched to the active HDMI or DisplayPort input channel.")
+                                ChecklistRow(number: "3", title: "Clamshell Dual Monitors", detail: "On M3 MacBook Air, close the laptop lid to drive two external monitors simultaneously.")
                             }
                             .padding()
                             .background(Color(nsColor: .controlBackgroundColor))
@@ -279,9 +244,59 @@ public struct AddDisplaySheet: View {
                             Button {
                                 manager.refreshDisplays()
                             } label: {
-                                Label("Refresh & Detect Monitor", systemImage: "arrow.clockwise")
+                                Label("Refresh & Scan Ports", systemImage: "arrow.clockwise")
                             }
                             .buttonStyle(.borderedProminent)
+                        }
+                    } else {
+                        // Category 3: USB Adapters & Virtual Displays
+                        VStack(alignment: .leading, spacing: 14) {
+                            HStack {
+                                Label("USB Adapters & Virtual Headless Displays", systemImage: "cpu")
+                                    .font(.headline)
+                                Spacer()
+                                Text("DisplayLink & DriverKit")
+                                    .font(.caption)
+                                    .fontWeight(.bold)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
+                                    .background(Color.purple.opacity(0.15))
+                                    .foregroundStyle(.purple)
+                                    .cornerRadius(6)
+                            }
+
+                            Text("Bypass Apple Silicon external monitor hardware limits or connect USB-based display controllers, portable monitors, and virtual headless screens.")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Supported Hardware & Adapters:")
+                                    .font(.subheadline)
+                                    .fontWeight(.bold)
+
+                                ChecklistRow(number: "1", title: "DisplayLink USB Adapters", detail: "Enables driving 2 or 3 external monitors on M1/M2 MacBook Air via USB data compression.")
+                                ChecklistRow(number: "2", title: "Silicon Motion (SMI) Hubs", detail: "Plug-and-play USB to dual-HDMI graphics converters with DriverKit acceleration.")
+                                ChecklistRow(number: "3", title: "High-Speed USB Tablet Mode", detail: "Direct USB-C to USB-C cable connection for zero-latency tablet display extension.")
+                            }
+                            .padding()
+                            .background(Color(nsColor: .controlBackgroundColor))
+                            .cornerRadius(10)
+
+                            HStack(spacing: 12) {
+                                Button {
+                                    sidecarService.openSystemAddDisplaySettings()
+                                } label: {
+                                    Label("Open macOS Displays (+)", systemImage: "plus.circle.fill")
+                                }
+                                .buttonStyle(.borderedProminent)
+
+                                Button {
+                                    manager.refreshDisplays()
+                                } label: {
+                                    Label("Refresh All Buses", systemImage: "arrow.clockwise")
+                                }
+                                .buttonStyle(.bordered)
+                            }
                         }
                     }
                 }
@@ -313,7 +328,7 @@ public struct AddDisplaySheet: View {
             .padding()
             .background(Color(nsColor: .controlBackgroundColor))
         }
-        .frame(width: 580, height: 560)
+        .frame(width: 620, height: 580)
         .onAppear {
             sidecarService.scanDevices()
         }
@@ -343,3 +358,4 @@ struct ChecklistRow: View {
         }
     }
 }
+
