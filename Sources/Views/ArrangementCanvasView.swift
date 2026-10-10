@@ -335,31 +335,15 @@ struct DisplayCanvasCard: View {
                             .cornerRadius(4)
                     }
 
-                    if display.isSidecarOrAirPlay {
-                        Text("SIDECAR")
-                            .font(.system(size: 9, weight: .bold))
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 2)
-                            .background(Color.purple.opacity(0.25))
-                            .cornerRadius(4)
-                    } else if display.isBuiltIn {
-                        Text("RETINA")
-                            .font(.system(size: 9, weight: .bold))
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 2)
-                            .background(Color.blue.opacity(0.2))
-                            .cornerRadius(4)
-                    } else {
-                        Text("EXTERNAL")
-                            .font(.system(size: 9, weight: .bold))
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 2)
-                            .background(Color.orange.opacity(0.2))
-                            .cornerRadius(4)
-                    }
+                    Text(display.recognizedType.badgeLabel)
+                        .font(.system(size: 9, weight: .bold))
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(display.recognizedType == .zebronicsExternal ? Color.orange.opacity(0.25) : (display.recognizedType == .sidecarIPad ? Color.purple.opacity(0.25) : Color.blue.opacity(0.2)))
+                        .cornerRadius(4)
                 }
 
-                Text(display.name)
+                Text(display.displayName)
                     .font(.system(size: 13, weight: .bold))
                     .lineLimit(1)
                     .truncationMode(.tail)

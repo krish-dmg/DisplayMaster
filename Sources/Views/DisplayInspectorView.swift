@@ -6,6 +6,7 @@ public struct DisplayInspectorView: View {
     @ObservedObject var manager: DisplayManager
     let display: DisplayInfo
 
+    @State private var aliasInput: String = ""
     @State private var selectedResolution: String = ""
     @State private var selectedRefreshRate: Double = 60.0
     @State private var selectedProfileID: String = ""
@@ -16,7 +17,6 @@ public struct DisplayInspectorView: View {
         self.display = display
     }
 
-    // Unique resolutions available for this display
     private var uniqueResolutions: [(width: Int, height: Int, isHiDPI: Bool)] {
         var seen = Set<String>()
         var list: [(width: Int, height: Int, isHiDPI: Bool)] = []
@@ -30,7 +30,6 @@ public struct DisplayInspectorView: View {
         return list
     }
 
-    // Refresh rates supported at the currently selected resolution
     private var supportedRefreshRatesForSelectedResolution: [Double] {
         guard let parsed = parseResolution(selectedResolution) else {
             return [display.currentRefreshRate]
@@ -45,42 +44,70 @@ public struct DisplayInspectorView: View {
     public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                // Monitor Header Card
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(spacing: 8) {
-                            Text(display.name)
-                                .font(.title)
-                                .fontWeight(.bold)
-
-                            if display.isMain {
-                                Text("Main")
-                                    .font(.caption)
+                // Monitor Header & Recognition Card
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(spacing: 8) {
+                                Text(display.displayName)
+                                    .font(.title)
                                     .fontWeight(.bold)
+
+                                Text(display.recognizedType.badgeLabel)
+                                    .font(.system(size: 10, weight: .bold))
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 2)
-                                    .background(Color.accentColor.opacity(0.2))
+                                    .background(Color.orange.opacity(0.2))
+                                    .foregroundStyle(.orange)
                                     .cornerRadius(4)
+
+                                if display.isMain {
+                                    Text("MAIN")
+                                        .font(.system(size: 10, weight: .bold))
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(Color.accentColor.opacity(0.2))
+                                        .cornerRadius(4)
+                                }
                             }
+
+                            Text(display.hardwareCategory)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+
+                            Text("Live Signal: \(display.pointWidth)x\(display.pointHeight) @ \(String(format: "%.0f", display.currentRefreshRate))Hz | Connection: \(display.connectionBus)")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
                         }
 
-                        Text(display.hardwareCategory)
-                            .font(.subheadline)
+                        Spacer()
+
+                        Button {
+                            manager.identifyDisplay(displayID: display.id)
+                        } label: {
+                            Label("Identify Screen", systemImage: "macwindow.badge.plus")
+                        }
+                        .buttonStyle(.bordered)
+                    }
+
+                    Divider()
+
+                    // Recognition Custom Alias Editor
+                    HStack(spacing: 10) {
+                        Text("Custom Name / Alias:")
+                            .font(.caption)
+                            .fontWeight(.medium)
                             .foregroundStyle(.secondary)
 
-                        Text("Current: \(display.pointWidth)x\(display.pointHeight) @ \(String(format: "%.0f", display.currentRefreshRate))Hz (Profile: \(display.currentColorProfileName))")
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
-                    }
+                        TextField("Set custom display name...", text: $aliasInput)
+                            .textFieldStyle(.roundedBorder)
 
-                    Spacer()
-
-                    Button {
-                        manager.identifyDisplay(displayID: display.id)
-                    } label: {
-                        Label("Identify Screen", systemImage: "macwindow.badge.plus")
+                        Button("Save Name") {
+                            manager.updateDisplayAlias(displayID: display.id, newAlias: aliasInput)
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(aliasInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
-                    .buttonStyle(.bordered)
                 }
                 .padding()
                 .background(Color(nsColor: .controlBackgroundColor))
@@ -88,8 +115,19 @@ public struct DisplayInspectorView: View {
 
                 // Tuning Section 1: Resolution & Refresh Rate
                 VStack(alignment: .leading, spacing: 14) {
-                    Label("Resolution & Refresh Rate", systemImage: "slider.horizontal.3")
-                        .font(.headline)
+                    HStack {
+                        Label("Resolution & Refresh Rate Tuning", systemImage: "slider.horizontal.3")
+                            .font(.headline)
+                        Spacer()
+                        Text("Active: \(String(format: "%.0f", display.currentRefreshRate)) Hz")
+                            .font(.caption)
+                            .fontWeight(.bold)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.blue.opacity(0.15))
+                            .foregroundStyle(.blue)
+                            .cornerRadius(4)
+                    }
 
                     HStack(spacing: 16) {
                         // Resolution Picker
@@ -107,7 +145,6 @@ public struct DisplayInspectorView: View {
                             .labelsHidden()
                             .pickerStyle(.menu)
                             .onChange(of: selectedResolution) {
-                                // Default to the highest available refresh rate for this resolution
                                 if let highest = supportedRefreshRatesForSelectedResolution.last {
                                     selectedRefreshRate = highest
                                 }
@@ -154,7 +191,7 @@ public struct DisplayInspectorView: View {
                 // Tuning Section 2: ColorSync Native Profiles
                 VStack(alignment: .leading, spacing: 14) {
                     HStack {
-                        Label("ColorSync Native Profile", systemImage: "paintpalette")
+                        Label("ColorSync Native Color Profile", systemImage: "paintpalette")
                             .font(.headline)
 
                         Spacer()
@@ -168,7 +205,7 @@ public struct DisplayInspectorView: View {
                         .font(.caption)
                     }
 
-                    Text("Switch between Apple native color standards (Display P3, Adobe RGB 1998, sRGB, etc.) directly in ColorSync hardware management.")
+                    Text("Switch between native macOS color profiles (Display P3, Adobe RGB 1998, sRGB, etc.) directly in ColorSync hardware management.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
@@ -199,7 +236,7 @@ public struct DisplayInspectorView: View {
 
                 // Tuning Section 3: Hardware Details & Deep Diagnostics
                 VStack(alignment: .leading, spacing: 12) {
-                    Label("Hardware & Display Diagnostics", systemImage: "cpu")
+                    Label("Live Hardware Diagnostics (Real System Data)", systemImage: "cpu")
                         .font(.headline)
 
                     Grid(alignment: .leading, horizontalSpacing: 20, verticalSpacing: 10) {
@@ -216,7 +253,7 @@ public struct DisplayInspectorView: View {
                         }
 
                         GridRow {
-                            Text("Logical Canvas:")
+                            Text("Logical Points:")
                                 .foregroundStyle(.secondary)
                             Text("\(display.pointWidth) x \(display.pointHeight) pt")
 
@@ -230,10 +267,20 @@ public struct DisplayInspectorView: View {
                                 .foregroundStyle(.secondary)
                             Text(display.pixelWidth > display.pointWidth ? "2x (HiDPI Retina)" : "1x (Standard)")
 
-                            Text("Origin Coordinates:")
+                            Text("Connection Bus:")
                                 .foregroundStyle(.secondary)
-                            Text("X: \(Int(round(display.bounds.origin.x))), Y: \(Int(round(display.bounds.origin.y)))")
+                            Text(display.connectionBus)
+                        }
+
+                        GridRow {
+                            Text("Active Refresh:")
+                                .foregroundStyle(.secondary)
+                            Text("\(String(format: "%.1f", display.currentRefreshRate)) Hz")
                                 .font(.system(.body, design: .monospaced))
+
+                            Text("Color Space:")
+                                .foregroundStyle(.secondary)
+                            Text(display.currentColorProfileName)
                         }
                     }
                     .font(.subheadline)
@@ -253,6 +300,7 @@ public struct DisplayInspectorView: View {
     }
 
     private func syncSelections() {
+        aliasInput = display.customAlias
         selectedResolution = "\(display.pointWidth)x\(display.pointHeight)"
         selectedRefreshRate = display.currentRefreshRate
 
@@ -276,12 +324,10 @@ public struct DisplayInspectorView: View {
         isProcessing = true
         defer { isProcessing = false }
 
-        // Find best matching mode
         let candidateModes = display.modes.filter {
             $0.width == parsed.width && $0.height == parsed.height
         }
 
-        // Match refresh rate closest to selected
         guard let matchingMode = candidateModes.min(by: {
             abs($0.refreshRate - selectedRefreshRate) < abs($1.refreshRate - selectedRefreshRate)
         }) else {

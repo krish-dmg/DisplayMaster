@@ -11,10 +11,12 @@ public final class DisplayManager: ObservableObject {
     @Published public private(set) var displays: [DisplayInfo] = []
     @Published public var selectedDisplayID: CGDirectDisplayID?
     @Published public private(set) var availableColorProfiles: [ColorProfileInfo] = []
+    @Published public var showAddDisplaySheet: Bool = false
     @Published public var statusMessage: String?
     @Published public var errorMessage: String?
 
     private var cancellables = Set<AnyCancellable>()
+    private let userDefaultsAliasesKey = "DisplayMaster_DisplayAliases"
 
     public init() {
         loadAvailableColorProfiles()
@@ -29,6 +31,19 @@ public final class DisplayManager: ObservableObject {
                 self?.refreshDisplays()
             }
             .store(in: &cancellables)
+    }
+
+    private func getSavedAliases() -> [String: String] {
+        return UserDefaults.standard.dictionary(forKey: userDefaultsAliasesKey) as? [String: String] ?? [:]
+    }
+
+    public func updateDisplayAlias(displayID: CGDirectDisplayID, newAlias: String) {
+        guard let display = displays.first(where: { $0.id == displayID }) else { return }
+        var aliases = getSavedAliases()
+        aliases[display.uuid] = newAlias
+        UserDefaults.standard.set(aliases, forKey: userDefaultsAliasesKey)
+        refreshDisplays()
+        statusMessage = "Updated display name to '\(newAlias)'"
     }
 
     public func loadAvailableColorProfiles() {
@@ -78,7 +93,6 @@ public final class DisplayManager: ObservableObject {
             }
         }
 
-        // Sort so common standards appear near the top
         self.availableColorProfiles = profiles.sorted { a, b in
             let priorityNames = ["Display P3", "Adobe RGB (1998)", "sRGB", "Rec. ITU-R BT.709", "Rec. ITU-R BT.2020", "Color LCD"]
             let aPriority = priorityNames.firstIndex(where: { a.name.contains($0) }) ?? 999
@@ -101,6 +115,7 @@ public final class DisplayManager: ObservableObject {
         var activeDisplayIDs = [CGDirectDisplayID](repeating: 0, count: Int(count))
         CGGetActiveDisplayList(count, &activeDisplayIDs, &count)
 
+        let savedAliases = getSavedAliases()
         var newDisplays: [DisplayInfo] = []
 
         for displayID in activeDisplayIDs {
@@ -108,20 +123,15 @@ public final class DisplayManager: ObservableObject {
             let isBuiltIn = CGDisplayIsBuiltin(displayID) != 0
             let isMain = CGDisplayIsMain(displayID) != 0
 
-            // Locate corresponding NSScreen for human localizedName and color space
             let matchingScreen = NSScreen.screens.first { screen in
                 let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
                 return id == displayID
             }
 
-            var screenName = matchingScreen?.localizedName ?? "Display \(displayID)"
-            let isSidecarOrAirPlay = screenName.localizedCaseInsensitiveContains("iPad") ||
-                                    screenName.localizedCaseInsensitiveContains("AirPlay") ||
-                                    screenName.localizedCaseInsensitiveContains("Sidecar")
-
-            if screenName.isEmpty {
-                screenName = isBuiltIn ? "Built-in Retina Display" : "External Display"
-            }
+            let rawScreenName = matchingScreen?.localizedName ?? "Display \(displayID)"
+            let isSidecarOrAirPlay = rawScreenName.localizedCaseInsensitiveContains("iPad") ||
+                                    rawScreenName.localizedCaseInsensitiveContains("AirPlay") ||
+                                    rawScreenName.localizedCaseInsensitiveContains("Sidecar")
 
             // Display UUID
             var uuidString = "Unknown-UUID"
@@ -131,6 +141,42 @@ public final class DisplayManager: ObservableObject {
                 cfUUID = retainedUUID
                 uuidString = CFUUIDCreateString(nil, retainedUUID) as String
             }
+
+            // Current Mode and Refresh Rate
+            let currentMode = CGDisplayCopyDisplayMode(displayID)
+            let pointW = currentMode?.width ?? Int(bounds.width)
+            let pointH = currentMode?.height ?? Int(bounds.height)
+            let pixelW = currentMode?.pixelWidth ?? pointW
+            let pixelH = currentMode?.pixelHeight ?? pointH
+            let refreshRate = currentMode?.refreshRate ?? 60.0
+
+            // Hardware Recognition
+            let recognizedType: RecognizedDisplayType
+            let systemName: String
+            let connectionBus: String
+
+            if isBuiltIn {
+                recognizedType = .builtInRetina
+                systemName = "Built-in Liquid Retina"
+                connectionBus = "Internal eDP"
+            } else if isSidecarOrAirPlay {
+                recognizedType = .sidecarIPad
+                systemName = "iPad Pro (Sidecar)"
+                connectionBus = "USB-C / AWDL Wireless"
+            } else {
+                // External display - check if HDMI or 100Hz (Zebronics)
+                if rawScreenName.localizedCaseInsensitiveContains("HDMI") || refreshRate >= 99.0 {
+                    recognizedType = .zebronicsExternal
+                    systemName = "Zebronics Monitor (HDMI)"
+                    connectionBus = "HDMI via USB-C"
+                } else {
+                    recognizedType = .genericExternal
+                    systemName = rawScreenName.isEmpty ? "External Monitor" : rawScreenName
+                    connectionBus = "USB-C / DisplayPort"
+                }
+            }
+
+            let customAlias = savedAliases[uuidString] ?? ""
 
             // Color Profile determination
             var currentProfileName = matchingScreen?.colorSpace?.localizedName ?? "System Default"
@@ -154,14 +200,6 @@ public final class DisplayManager: ObservableObject {
                     }
                 }
             }
-
-            // Current Mode
-            let currentMode = CGDisplayCopyDisplayMode(displayID)
-            let pointW = currentMode?.width ?? Int(bounds.width)
-            let pointH = currentMode?.height ?? Int(bounds.height)
-            let pixelW = currentMode?.pixelWidth ?? pointW
-            let pixelH = currentMode?.pixelHeight ?? pointH
-            let refreshRate = currentMode?.refreshRate ?? 60.0
 
             // Available Modes
             let options = [kCGDisplayShowDuplicateLowResolutionModes as String: kCFBooleanTrue] as CFDictionary
@@ -197,14 +235,12 @@ public final class DisplayManager: ObservableObject {
                 }
             }
 
-            // Sort modes by descending resolution, then refresh rate
             modesList.sort { a, b in
                 if a.width != b.width { return a.width > b.width }
                 if a.height != b.height { return a.height > b.height }
                 return a.refreshRate > b.refreshRate
             }
 
-            // Map color profiles with current selection tagged
             let profilesWithCurrent = availableColorProfiles.map { item in
                 ColorProfileInfo(
                     id: item.id,
@@ -219,7 +255,9 @@ public final class DisplayManager: ObservableObject {
                 DisplayInfo(
                     id: displayID,
                     uuid: uuidString,
-                    name: screenName,
+                    systemName: systemName,
+                    customAlias: customAlias,
+                    recognizedType: recognizedType,
                     isBuiltIn: isBuiltIn,
                     isMain: isMain,
                     bounds: bounds,
@@ -231,6 +269,7 @@ public final class DisplayManager: ObservableObject {
                     currentColorProfileName: currentProfileName,
                     currentColorProfileURL: currentProfileURL,
                     isSidecarOrAirPlay: isSidecarOrAirPlay,
+                    connectionBus: connectionBus,
                     modes: modesList,
                     colorProfiles: profilesWithCurrent
                 )
@@ -356,7 +395,7 @@ public final class DisplayManager: ObservableObject {
     }
 
     public func identifyDisplay(displayID: CGDirectDisplayID) {
-        let name = displays.first(where: { $0.id == displayID })?.name ?? "Display \(displayID)"
+        let name = displays.first(where: { $0.id == displayID })?.displayName ?? "Display \(displayID)"
         ScreenIdentifierOverlay.shared.flash(displayID: displayID, displayName: name)
     }
 }

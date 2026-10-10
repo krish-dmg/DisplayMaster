@@ -3,6 +3,7 @@ import AppKit
 
 enum NavigationItem: Hashable {
     case arrangement
+    case addDisplay
     case display(CGDirectDisplayID)
     case architecture
 }
@@ -21,6 +22,10 @@ public struct MainContentView: View {
                         Label("Arrangement Canvas", systemImage: "square.split.2x2")
                     }
 
+                    NavigationLink(value: NavigationItem.addDisplay) {
+                        Label("Add & Connect Display", systemImage: "plus.rectangle.on.rectangle")
+                    }
+
                     NavigationLink(value: NavigationItem.architecture) {
                         Label("Deep Architecture", systemImage: "book.pages")
                     }
@@ -32,8 +37,10 @@ public struct MainContentView: View {
                             HStack {
                                 VStack(alignment: .leading, spacing: 2) {
                                     HStack(spacing: 4) {
-                                        Text(display.name)
+                                        Text(display.displayName)
                                             .fontWeight(.medium)
+                                            .lineLimit(1)
+
                                         if display.isMain {
                                             Text("Main")
                                                 .font(.system(size: 9, weight: .bold))
@@ -44,9 +51,18 @@ public struct MainContentView: View {
                                         }
                                     }
 
-                                    Text("\(display.pointWidth)x\(display.pointHeight) @ \(String(format: "%.0f", display.currentRefreshRate))Hz")
-                                        .font(.caption2)
-                                        .foregroundStyle(.secondary)
+                                    HStack(spacing: 4) {
+                                        Text(display.recognizedType.badgeLabel)
+                                            .font(.system(size: 8, weight: .bold))
+                                            .padding(.horizontal, 4)
+                                            .padding(.vertical, 1)
+                                            .background(Color.secondary.opacity(0.15))
+                                            .cornerRadius(3)
+
+                                        Text("\(display.pointWidth)x\(display.pointHeight) @ \(String(format: "%.0f", display.currentRefreshRate))Hz")
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    }
                                 }
 
                                 Spacer()
@@ -67,6 +83,15 @@ public struct MainContentView: View {
             .navigationTitle("DisplayMaster")
             .listStyle(.sidebar)
             .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        manager.showAddDisplaySheet = true
+                    } label: {
+                        Label("Add Display", systemImage: "plus")
+                    }
+                    .help("Add display via USB-C, Wireless Sidecar, or HDMI")
+                }
+
                 ToolbarItem(placement: .automatic) {
                     Button {
                         manager.refreshDisplays()
@@ -92,6 +117,9 @@ public struct MainContentView: View {
             case .arrangement, .none:
                 ArrangementCanvasView(manager: manager)
 
+            case .addDisplay:
+                AddDisplaySheet()
+
             case .architecture:
                 ArchitectureResearchView()
 
@@ -103,6 +131,9 @@ public struct MainContentView: View {
                 }
             }
         }
-        .frame(minWidth: 900, minHeight: 600)
+        .sheet(isPresented: $manager.showAddDisplaySheet) {
+            AddDisplaySheet()
+        }
+        .frame(minWidth: 950, minHeight: 620)
     }
 }

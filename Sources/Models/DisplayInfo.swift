@@ -2,6 +2,22 @@ import Foundation
 import CoreGraphics
 import AppKit
 
+public enum RecognizedDisplayType: String, Codable {
+    case builtInRetina = "Built-in Retina Display"
+    case zebronicsExternal = "Zebronics External Monitor"
+    case sidecarIPad = "iPad Pro (Sidecar)"
+    case genericExternal = "External Monitor"
+
+    public var badgeLabel: String {
+        switch self {
+        case .builtInRetina: return "RETINA"
+        case .zebronicsExternal: return "ZEBRONICS 100Hz"
+        case .sidecarIPad: return "IPAD PRO"
+        case .genericExternal: return "EXTERNAL"
+        }
+    }
+}
+
 public struct DisplayModeInfo: Identifiable, Hashable {
     public var id: String {
         "\(width)x\(height)@\(String(format: "%.1f", refreshRate))-\(pixelWidth)x\(pixelHeight)"
@@ -43,7 +59,9 @@ public struct ColorProfileInfo: Identifiable, Hashable {
 public struct DisplayInfo: Identifiable, Hashable {
     public let id: CGDirectDisplayID
     public let uuid: String
-    public let name: String
+    public let systemName: String
+    public var customAlias: String
+    public let recognizedType: RecognizedDisplayType
     public let isBuiltIn: Bool
     public let isMain: Bool
     public var bounds: CGRect
@@ -55,8 +73,16 @@ public struct DisplayInfo: Identifiable, Hashable {
     public let currentColorProfileName: String
     public let currentColorProfileURL: URL?
     public let isSidecarOrAirPlay: Bool
+    public let connectionBus: String
     public let modes: [DisplayModeInfo]
     public let colorProfiles: [ColorProfileInfo]
+
+    public var displayName: String {
+        if !customAlias.isEmpty {
+            return customAlias
+        }
+        return systemName
+    }
 
     public var aspectRatio: CGFloat {
         guard pointHeight > 0 else { return 16.0 / 9.0 }
@@ -64,12 +90,15 @@ public struct DisplayInfo: Identifiable, Hashable {
     }
 
     public var hardwareCategory: String {
-        if isSidecarOrAirPlay {
-            return "Sidecar / Wireless iPad"
-        } else if isBuiltIn {
-            return "Built-in Liquid Retina"
-        } else {
-            return "External Display (Zebronics / HDMI / DP)"
+        switch recognizedType {
+        case .builtInRetina:
+            return "Built-in Liquid Retina (Color LCD)"
+        case .zebronicsExternal:
+            return "Zebronics HDMI External Monitor (\(String(format: "%.0f", currentRefreshRate))Hz)"
+        case .sidecarIPad:
+            return "iPad Pro Sidecar Extended Display (\(String(format: "%.0f", currentRefreshRate))Hz)"
+        case .genericExternal:
+            return "External Monitor via \(connectionBus) (\(String(format: "%.0f", currentRefreshRate))Hz)"
         }
     }
 
@@ -83,6 +112,7 @@ public struct DisplayInfo: Identifiable, Hashable {
         lhs.id == rhs.id &&
         lhs.bounds == rhs.bounds &&
         lhs.currentRefreshRate == rhs.currentRefreshRate &&
-        lhs.currentColorProfileName == rhs.currentColorProfileName
+        lhs.currentColorProfileName == rhs.currentColorProfileName &&
+        lhs.customAlias == rhs.customAlias
     }
 }
