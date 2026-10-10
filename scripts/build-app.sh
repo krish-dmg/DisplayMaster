@@ -21,6 +21,12 @@ mkdir -p "$RESOURCES_DIR"
 cp "$DIR/.build/release/DisplayMaster" "$MACOS_DIR/DisplayMaster"
 chmod +x "$MACOS_DIR/DisplayMaster"
 
+if [ -f "$DIR/AppIcon.icns" ]; then
+    cp "$DIR/AppIcon.icns" "$RESOURCES_DIR/AppIcon.icns"
+elif [ -f "$DIR/Resources/AppIcon.icns" ]; then
+    cp "$DIR/Resources/AppIcon.icns" "$RESOURCES_DIR/AppIcon.icns"
+fi
+
 cat <<EOF > "$CONTENTS_DIR/Info.plist"
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -30,6 +36,8 @@ cat <<EOF > "$CONTENTS_DIR/Info.plist"
     <string>en</string>
     <key>CFBundleExecutable</key>
     <string>DisplayMaster</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundleIdentifier</key>
     <string>com.opensource.displaymaster</string>
     <key>CFBundleInfoDictionaryVersion</key>

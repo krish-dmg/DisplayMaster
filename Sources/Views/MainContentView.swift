@@ -3,6 +3,7 @@ import AppKit
 
 enum NavigationItem: Hashable {
     case arrangement
+    case cursorCrossing
     case addDisplay
     case display(CGDirectDisplayID)
     case architecture
@@ -20,6 +21,10 @@ public struct MainContentView: View {
                 Section("Tools") {
                     NavigationLink(value: NavigationItem.arrangement) {
                         Label("Arrangement Canvas", systemImage: "square.split.2x2")
+                    }
+
+                    NavigationLink(value: NavigationItem.cursorCrossing) {
+                        Label("Cursor Crossing (Dead Wall Fix)", systemImage: "cursorarrow.and.square.on.square.dashed")
                     }
 
                     NavigationLink(value: NavigationItem.addDisplay) {
@@ -116,6 +121,9 @@ public struct MainContentView: View {
             switch selection {
             case .arrangement, .none:
                 ArrangementCanvasView(manager: manager)
+
+            case .cursorCrossing:
+                CursorCrossingView()
 
             case .addDisplay:
                 AddDisplaySheet()

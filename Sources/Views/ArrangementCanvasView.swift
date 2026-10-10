@@ -1,19 +1,25 @@
 import SwiftUI
 import AppKit
 
-struct SnapGuideLine: Identifiable {
-    let id = UUID()
-    let start: CGPoint
-    let end: CGPoint
+public struct SmartGuide: Identifiable {
+    public let id = UUID()
+    public let isHorizontal: Bool
+    public let position: CGFloat // Canvas coordinate (X if vertical, Y if horizontal)
+    public let label: String
+    public let start: CGFloat
+    public let end: CGFloat
 }
 
 public struct ArrangementCanvasView: View {
     @ObservedObject var manager: DisplayManager
+    @ObservedObject var cursorBridge = CursorBridgeService.shared
+
     @State private var stagedPositions: [CGDirectDisplayID: CGPoint] = [:]
     @State private var draggingDisplayID: CGDirectDisplayID? = nil
     @State private var dragOffset: CGSize = .zero
-    @State private var activeSnapGuides: [SnapGuideLine] = []
+    @State private var activeGuides: [SmartGuide] = []
     @State private var isApplying: Bool = false
+    @State private var normalizeCanvasHeights: Bool = false
 
     public init(manager: DisplayManager) {
         self.manager = manager
@@ -21,13 +27,29 @@ public struct ArrangementCanvasView: View {
 
     public var body: some View {
         VStack(spacing: 0) {
-            // Control Header
+            // Header Bar
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Display Arrangement")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                    Text("Drag monitors to match your physical desk layout. Snapping aligns edges smoothly.")
+                    HStack(spacing: 8) {
+                        Text("Display Arrangement")
+                            .font(.title2)
+                            .fontWeight(.bold)
+
+                        if cursorBridge.isEnabled {
+                            HStack(spacing: 4) {
+                                Circle().fill(Color.green).frame(width: 6, height: 6)
+                                Text("Seamless Cursor Crossing ON")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundStyle(.green)
+                            }
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.green.opacity(0.12))
+                            .cornerRadius(4)
+                        }
+                    }
+
+                    Text("Drag displays to position. Smart alignment guides show center, top, and edge snapping.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
@@ -35,15 +57,28 @@ public struct ArrangementCanvasView: View {
                 Spacer()
 
                 HStack(spacing: 10) {
+                    // Equal Height View Toggle
+                    Toggle(isOn: $normalizeCanvasHeights) {
+                        Label("Equalize Visual Heights", systemImage: "rectangle.compress.vertical")
+                            .font(.caption)
+                    }
+                    .toggleStyle(.button)
+
                     Menu {
+                        Button("MacBook Center Wing Preset") {
+                            autoArrangeMacBookCenter()
+                        }
                         Button("Auto Align (Left to Right)") {
                             autoArrangeHorizontal()
                         }
-                        Button("MacBook Center Preset") {
-                            autoArrangeMacBookCenter()
+                        Button("Align Center Y (Middle Level)") {
+                            alignAllCenterY()
+                        }
+                        Button("Align Top Edges") {
+                            alignAllTopEdges()
                         }
                     } label: {
-                        Label("Presets", systemImage: "rectangle.3.group")
+                        Label("Presets & Align", systemImage: "rectangle.3.group")
                     }
                     .menuStyle(.borderedButton)
 
@@ -77,25 +112,106 @@ public struct ArrangementCanvasView: View {
 
             Divider()
 
+            // Seamless Cursor Bridge Banner
+            HStack(spacing: 12) {
+                Image(systemName: "cursorarrow.and.square.on.square.dashed")
+                    .font(.headline)
+                    .foregroundStyle(Color.accentColor)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text("Seamless Edge Crossing (Dead Wall Fix):")
+                            .font(.caption)
+                            .fontWeight(.bold)
+
+                        Text(cursorBridge.isEnabled ? "Active" : "Disabled")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(cursorBridge.isEnabled ? .green : .secondary)
+                    }
+
+                    Text("Allows mouse to cross effortlessly between iPad Pro, MacBook Air, and Zebronics monitor from the dead top or dead bottom without hitting borders.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Picker("Mode", selection: $cursorBridge.mode) {
+                    ForEach(CursorBridgeMode.allCases) { mode in
+                        Text(mode.rawValue).tag(mode)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .frame(width: 250)
+
+                Toggle("", isOn: $cursorBridge.isEnabled)
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+            .background(Color(nsColor: .controlBackgroundColor).opacity(0.85))
+
+            Divider()
+
             // Visual Canvas Area
             GeometryReader { geometry in
                 let scale = calculateCanvasScale(geometrySize: geometry.size)
                 let canvasOffset = calculateCanvasOffset(geometrySize: geometry.size, scale: scale)
 
                 ZStack {
-                    // Grid
+                    // Canvas grid
                     CanvasBackgroundGrid()
 
-                    // Snap Guide Lines
-                    ForEach(activeSnapGuides) { guide in
-                        Path { path in
-                            path.move(to: guide.start)
-                            path.addLine(to: guide.end)
+                    // Smart Alignment Guide Lines (Figma / Photoshop style)
+                    ForEach(activeGuides) { guide in
+                        if guide.isHorizontal {
+                            // Horizontal guide line
+                            let yPos = (guide.position * scale) + canvasOffset.y
+                            ZStack {
+                                Path { path in
+                                    path.move(to: CGPoint(x: 0, y: yPos))
+                                    path.addLine(to: CGPoint(x: geometry.size.width, y: yPos))
+                                }
+                                .stroke(Color.cyan, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
+                                .shadow(color: Color.cyan.opacity(0.4), radius: 2)
+
+                                // Guide Label Badge
+                                Text(guide.label)
+                                    .font(.system(size: 9, weight: .bold))
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 2)
+                                    .background(Color.cyan)
+                                    .foregroundStyle(.black)
+                                    .cornerRadius(3)
+                                    .position(x: geometry.size.width / 2, y: yPos - 10)
+                            }
+                        } else {
+                            // Vertical guide line
+                            let xPos = (guide.position * scale) + canvasOffset.x
+                            ZStack {
+                                Path { path in
+                                    path.move(to: CGPoint(x: xPos, y: 0))
+                                    path.addLine(to: CGPoint(x: xPos, y: geometry.size.height))
+                                }
+                                .stroke(Color.cyan, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
+                                .shadow(color: Color.cyan.opacity(0.4), radius: 2)
+
+                                Text(guide.label)
+                                    .font(.system(size: 9, weight: .bold))
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 2)
+                                    .background(Color.cyan)
+                                    .foregroundStyle(.black)
+                                    .cornerRadius(3)
+                                    .position(x: xPos + 25, y: 20)
+                            }
                         }
-                        .stroke(Color.accentColor.opacity(0.8), style: StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
                     }
 
-                    // Displays
+                    // Render Displays
                     ForEach(manager.displays) { display in
                         let currentOrigin = stagedPositions[display.id] ?? display.bounds.origin
                         let effectiveOrigin = (draggingDisplayID == display.id)
@@ -103,8 +219,13 @@ public struct ArrangementCanvasView: View {
                                       y: currentOrigin.y + (dragOffset.height / scale))
                             : currentOrigin
 
-                        let cardWidth = CGFloat(display.pointWidth) * scale
-                        let cardHeight = CGFloat(display.pointHeight) * scale
+                        let effectiveHeight = normalizeCanvasHeights ? 1050.0 : CGFloat(display.pointHeight)
+                        let effectiveWidth = normalizeCanvasHeights
+                            ? (effectiveHeight * display.aspectRatio)
+                            : CGFloat(display.pointWidth)
+
+                        let cardWidth = effectiveWidth * scale
+                        let cardHeight = effectiveHeight * scale
 
                         DisplayCanvasCard(
                             display: display,
@@ -126,6 +247,14 @@ public struct ArrangementCanvasView: View {
                                         manager.selectedDisplayID = display.id
                                     }
                                     dragOffset = value.translation
+
+                                    let deltaX = value.translation.width / scale
+                                    let deltaY = value.translation.height / scale
+                                    let livePos = CGPoint(x: currentOrigin.x + deltaX, y: currentOrigin.y + deltaY)
+
+                                    // Compute live smart alignment guides
+                                    let (_, guides) = calculateSmartAlignment(for: display, rawOrigin: livePos)
+                                    activeGuides = guides
                                 }
                                 .onEnded { value in
                                     let deltaX = value.translation.width / scale
@@ -135,11 +264,11 @@ public struct ArrangementCanvasView: View {
                                         y: currentOrigin.y + deltaY
                                     )
 
-                                    let (snappedOrigin, _) = snapOrigin(for: display, rawOrigin: rawNewOrigin)
+                                    let (snappedOrigin, _) = calculateSmartAlignment(for: display, rawOrigin: rawNewOrigin)
                                     stagedPositions[display.id] = snappedOrigin
                                     draggingDisplayID = nil
                                     dragOffset = .zero
-                                    activeSnapGuides = []
+                                    activeGuides = []
                                 }
                         )
                         .onTapGesture {
@@ -172,7 +301,7 @@ public struct ArrangementCanvasView: View {
                         .font(.caption)
                         .foregroundStyle(.red)
                 } else {
-                    Text("Drag to arrange. Snaps smoothly to neighboring display edges.")
+                    Text("Drag displays near another to trigger Center, Top, Bottom, and Edge snapping guides.")
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                 }
@@ -199,6 +328,7 @@ public struct ArrangementCanvasView: View {
 
     private func resetToCurrentLayout() {
         syncStagedPositions()
+        activeGuides = []
         manager.statusMessage = "Arrangement reset to current layout."
     }
 
@@ -228,13 +358,16 @@ public struct ArrangementCanvasView: View {
 
         let others = manager.displays.filter { $0.id != builtIn.id }
         if others.count == 1 {
-            // Put external to the right
-            newPositions[others[0].id] = CGPoint(x: CGFloat(builtIn.pointWidth), y: 0)
+            // External to right, center aligned
+            let diffY = (CGFloat(builtIn.pointHeight) - CGFloat(others[0].pointHeight)) / 2
+            newPositions[others[0].id] = CGPoint(x: CGFloat(builtIn.pointWidth), y: diffY)
         } else if others.count >= 2 {
-            // Put first (e.g. iPad) to left, second (Zebronics) to right
-            newPositions[others[0].id] = CGPoint(x: -CGFloat(others[0].pointWidth), y: 0)
-            newPositions[others[1].id] = CGPoint(x: CGFloat(builtIn.pointWidth), y: 0)
-            // Any further displays stack rightwards
+            // iPad to left, Zebronics to right, both center Y aligned!
+            let leftDiffY = (CGFloat(builtIn.pointHeight) - CGFloat(others[0].pointHeight)) / 2
+            let rightDiffY = (CGFloat(builtIn.pointHeight) - CGFloat(others[1].pointHeight)) / 2
+            newPositions[others[0].id] = CGPoint(x: -CGFloat(others[0].pointWidth), y: leftDiffY)
+            newPositions[others[1].id] = CGPoint(x: CGFloat(builtIn.pointWidth), y: rightDiffY)
+
             var curX = CGFloat(builtIn.pointWidth) + CGFloat(others[1].pointWidth)
             for d in others.dropFirst(2) {
                 newPositions[d.id] = CGPoint(x: curX, y: 0)
@@ -243,33 +376,129 @@ public struct ArrangementCanvasView: View {
         }
 
         stagedPositions = newPositions
-        manager.statusMessage = "Preset applied: MacBook Center with side wings."
+        manager.statusMessage = "Preset applied: MacBook Center with iPad Left & Zebronics Right (Centered Level)."
     }
 
-    private func snapOrigin(for display: DisplayInfo, rawOrigin: CGPoint) -> (CGPoint, [SnapGuideLine]) {
+    private func alignAllCenterY() {
+        guard !manager.displays.isEmpty else { return }
+        let main = manager.displays.first(where: { $0.isMain }) ?? manager.displays[0]
+        let mainCenterY = (stagedPositions[main.id]?.y ?? main.bounds.origin.y) + (CGFloat(main.pointHeight) / 2)
+
+        var updated = stagedPositions
+        for d in manager.displays {
+            let currentX = updated[d.id]?.x ?? d.bounds.origin.x
+            let targetY = mainCenterY - (CGFloat(d.pointHeight) / 2)
+            updated[d.id] = CGPoint(x: currentX, y: targetY)
+        }
+        stagedPositions = updated
+        manager.statusMessage = "All monitors aligned to common Center Y level."
+    }
+
+    private func alignAllTopEdges() {
+        guard !manager.displays.isEmpty else { return }
+        let main = manager.displays.first(where: { $0.isMain }) ?? manager.displays[0]
+        let mainTopY = (stagedPositions[main.id]?.y ?? main.bounds.origin.y)
+
+        var updated = stagedPositions
+        for d in manager.displays {
+            let currentX = updated[d.id]?.x ?? d.bounds.origin.x
+            updated[d.id] = CGPoint(x: currentX, y: mainTopY)
+        }
+        stagedPositions = updated
+        manager.statusMessage = "All monitor top edges aligned."
+    }
+
+    // Figma / Photoshop style Smart Guide Calculation
+    private func calculateSmartAlignment(for display: DisplayInfo, rawOrigin: CGPoint) -> (CGPoint, [SmartGuide]) {
         var snapped = rawOrigin
-        let snapTolerance: CGFloat = 35.0
-        let guides: [SnapGuideLine] = []
+        let snapThreshold: CGFloat = 18.0
+        var guides: [SmartGuide] = []
+
+        let dWidth = CGFloat(display.pointWidth)
+        let dHeight = CGFloat(display.pointHeight)
+        let dCenterY = rawOrigin.y + (dHeight / 2)
+        let dCenterX = rawOrigin.x + (dWidth / 2)
 
         for other in manager.displays where other.id != display.id {
             let otherOrigin = stagedPositions[other.id] ?? other.bounds.origin
-            let otherRight = otherOrigin.x + CGFloat(other.pointWidth)
-            let otherBottom = otherOrigin.y + CGFloat(other.pointHeight)
+            let oWidth = CGFloat(other.pointWidth)
+            let oHeight = CGFloat(other.pointHeight)
+            let oCenterY = otherOrigin.y + (oHeight / 2)
+            let oCenterX = otherOrigin.x + (oWidth / 2)
 
-            if abs(snapped.x - otherRight) < snapTolerance {
-                snapped.x = otherRight
-            }
-            if abs((snapped.x + CGFloat(display.pointWidth)) - otherOrigin.x) < snapTolerance {
-                snapped.x = otherOrigin.x - CGFloat(display.pointWidth)
-            }
-            if abs(snapped.y - otherOrigin.y) < snapTolerance {
+            // 1. Top Edge Alignment
+            if abs(snapped.y - otherOrigin.y) < snapThreshold {
                 snapped.y = otherOrigin.y
+                guides.append(SmartGuide(
+                    isHorizontal: true,
+                    position: otherOrigin.y,
+                    label: "TOP ALIGN",
+                    start: min(snapped.x, otherOrigin.x),
+                    end: max(snapped.x + dWidth, otherOrigin.x + oWidth)
+                ))
             }
-            if abs(snapped.y - otherBottom) < snapTolerance {
-                snapped.y = otherBottom
+
+            // 2. Center Y (Middle Level) Alignment
+            if abs(dCenterY - oCenterY) < snapThreshold {
+                snapped.y = oCenterY - (dHeight / 2)
+                guides.append(SmartGuide(
+                    isHorizontal: true,
+                    position: oCenterY,
+                    label: "CENTER LEVEL",
+                    start: min(snapped.x, otherOrigin.x),
+                    end: max(snapped.x + dWidth, otherOrigin.x + oWidth)
+                ))
             }
-            if abs((snapped.y + CGFloat(display.pointHeight)) - otherOrigin.y) < snapTolerance {
-                snapped.y = otherOrigin.y - CGFloat(display.pointHeight)
+
+            // 3. Bottom Edge Alignment
+            let targetBottom = otherOrigin.y + oHeight
+            if abs((snapped.y + dHeight) - targetBottom) < snapThreshold {
+                snapped.y = targetBottom - dHeight
+                guides.append(SmartGuide(
+                    isHorizontal: true,
+                    position: targetBottom,
+                    label: "BOTTOM ALIGN",
+                    start: min(snapped.x, otherOrigin.x),
+                    end: max(snapped.x + dWidth, otherOrigin.x + oWidth)
+                ))
+            }
+
+            // 4. Horizontal Edge Touching (Left of other)
+            let targetLeftTouch = otherOrigin.x - dWidth
+            if abs(snapped.x - targetLeftTouch) < snapThreshold {
+                snapped.x = targetLeftTouch
+                guides.append(SmartGuide(
+                    isHorizontal: false,
+                    position: otherOrigin.x,
+                    label: "EDGE SNAP",
+                    start: min(snapped.y, otherOrigin.y),
+                    end: max(snapped.y + dHeight, otherOrigin.y + oHeight)
+                ))
+            }
+
+            // 5. Horizontal Edge Touching (Right of other)
+            let targetRightTouch = otherOrigin.x + oWidth
+            if abs(snapped.x - targetRightTouch) < snapThreshold {
+                snapped.x = targetRightTouch
+                guides.append(SmartGuide(
+                    isHorizontal: false,
+                    position: targetRightTouch,
+                    label: "EDGE SNAP",
+                    start: min(snapped.y, otherOrigin.y),
+                    end: max(snapped.y + dHeight, otherOrigin.y + oHeight)
+                ))
+            }
+
+            // 6. Center X Alignment (for vertical stacking)
+            if abs(dCenterX - oCenterX) < snapThreshold {
+                snapped.x = oCenterX - (dWidth / 2)
+                guides.append(SmartGuide(
+                    isHorizontal: false,
+                    position: oCenterX,
+                    label: "CENTER X",
+                    start: min(snapped.y, otherOrigin.y),
+                    end: max(snapped.y + dHeight, otherOrigin.y + oHeight)
+                ))
             }
         }
 
