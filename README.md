@@ -53,8 +53,9 @@ Built 100% in pure Swift, SwiftUI, AppKit, CoreGraphics, and ColorSync. It conta
   - Transport operates over high-speed USB-C cable or wireless peer-to-peer Apple Wireless Direct Link (AWDL) with Bluetooth Low Energy discovery.
   - The macOS WindowServer creates an offscreen framebuffer, compressed in real time using VideoToolbox hardware H.264/HEVC encoding (sub-20ms latency).
   - Sidecar displays register as full `CGDirectDisplayID` instances in CoreGraphics, supporting standard coordinate arrangement and scaling.
+  - **Why Sidecar only exposes 60Hz:** Despite the iPad Pro hardware featuring a 120Hz ProMotion panel, Apple hardcodes the Sidecar virtual display driver and VideoToolbox encoding profile to 60.00Hz. This design bounds compression latency, limits thermal and battery drain on both devices, and ensures compatibility across older models.
 - **AirPlay 2:** Transmits desktop video over RTSP/RTP to Apple TV or AirPlay receiver devices.
-- **Universal Control:** Shares keyboard and cursor input across devices without transmitting video framebuffers.
+- **Universal Control:** Shares keyboard and cursor input across devices without transmitting video framebuffers. When using Universal Control, the iPad Pro continues to render its native iPadOS UI at full 120Hz ProMotion.
 
 ---
 

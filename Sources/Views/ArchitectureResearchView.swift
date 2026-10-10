@@ -56,8 +56,8 @@ public struct ArchitectureResearchView: View {
                         Text("Sidecar connects your iPad Pro 2018 as an ultra-low-latency display extension:")
                         Text("- Transport: Operates over direct USB-C cable (high-throughput multiplexed USB channel) or wirelessly via AWDL (Apple Wireless Direct Link) peer-to-peer Wi-Fi with Bluetooth Low Energy discovery.")
                         Text("- Framebuffer Generation: macOS WindowServer creates a virtual display framebuffer. VideoToolbox hardware-encodes frames using H.264 / HEVC with real-time rate control (< 20ms round-trip latency).")
-                        Text("- In CoreGraphics: Sidecar exposes a genuine CGDirectDisplayID. It integrates directly into the global desktop coordinates, allowing dragging windows and spatial positioning just like physical hardware.")
-                        Text("- Universal Control vs Sidecar: Universal Control routes mouse and keyboard HID events across devices while each device runs its own OS. Sidecar treats the iPad as an external display buffer.")
+                        Text("- Why Sidecar is capped at 60Hz on 120Hz iPad Pro: Even though the iPad Pro physically possesses a 120Hz ProMotion panel, Apple hardcodes the Sidecar virtual display driver and VideoToolbox streaming pipeline to a maximum of 60.00Hz. This design choice prevents thermal throttling, saves battery on both devices, and bounds compression latency under 20ms.")
+                        Text("- Universal Control vs Sidecar: Universal Control routes mouse and keyboard HID events across devices while each device runs its own OS. In Universal Control, your iPad Pro runs its native iPadOS UI at full 120Hz ProMotion. In Sidecar, it acts as a 60Hz video stream receiver.")
                     }
                     .font(.body)
                 }
